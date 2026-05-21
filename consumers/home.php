@@ -1,50 +1,155 @@
 <?php
-// 1. START SESSION & INCLUDE DB
+// ---------------------------------------------------------------------
+// PERMANENT SESSION CONFIGURATION (Like Facebook)
+// ---------------------------------------------------------------------
+$lifetime = 60 * 60 * 24 * 365; // 1 Year
+ini_set('session.gc_maxlifetime', $lifetime);
+session_set_cookie_params($lifetime);
 session_start();
+
 require_once '../db/dbcon.php';
 
 // ---------------------------------------------------------------------
-// STANDARD RATES DATA (Kept to calculate dynamic AI Chatbot costs & Invoice breakdown)
+// 1. PWA MANIFEST GENERATOR (Mobile App Registration)
 // ---------------------------------------------------------------------
-$standardRates = [
-    ['Generation System Charge', 'Per_KWH', 6.6024, 0],
-    ['Franchise/Benefit to Host', 'Per_KWH', 0.0000, 0],
-    ['GRAM', 'Per_KWH', 0.0000, 0],
-    ['ICERA', 'Per_KWH', 0.0000, 0],
-    ['Power Act Reduction', 'Per_KWH', 0.0000, 0],
-    ['Transmission Demand Charge', 'Per_KWH', 0.0000, 0],
-    ['Transmission System Charge', 'Per_KWH', 1.8428, 0],
-    ['System Loss Charge', 'Per_KWH', 1.0503, 0],
-    ['Distribution Demand Charge', 'Per_KWH', 0.0000, 0],
-    ['Distribution System Charge', 'Per_KWH', 0.5782, 0],
-    ['Supply Retail Cust. Charge', 'Per_Customer', 0.0000, 0],
-    ['Supply System Charge', 'Per_KWH', 0.6001, 0],
-    ['Metering Retail Charge', 'Per_Customer', 5.0000, 0],
-    ['Metering System Charge', 'Per_KWH', 0.4326, 0],
-    ['Missionary Electrification', 'Per_KWH', 0.2763, 0],
-    ['Environmental Charge', 'Per_KWH', 0.0025, 0],
-    ['NPC Stranded Contract Cost', 'Per_KWH', 0.0000, 0],
-    ['NPC Stranded Debts', 'Per_KWH', 0.0428, 0],
-    ['UC - Fit All', 'Per_KWH', 0.2011, 0],
-    ['GEA-ALL', 'Per_KWH', 0.0371, 0],
-    ['REC Recovery', 'Per_KWH', 0.0181, 0],
-    ['Inter Class Cross Subsidy', 'Per_KWH', 0.0000, 0],
-    ['Lifeline Rate Subsidy', 'Per_KWH', 0.0100, 0],
-    ['Loan Condonation Per KWH', 'Per_KWH', 0.0000, 0],
-    ['Loan Condonation Per Conn', 'Per_Customer', 0.0000, 0],
-    ['Power Cost Adj. Refund', 'Per_KWH', 0.0000, 0],
-    ['Rein. Fund for Sus. CAPEX', 'Per_KWH', 0.2904, 0],
-    ['Senior Citizen Subsidy', 'Per_KWH', 0.0001, 0],
-    ['Generation VAT', 'Per_KWH', 0.8048, 0],
-    ['Transmission VAT', 'Per_KWH', 0.2323, 0],
-    ['DSM VAT', 'Per_KWH', 0.1992, 0]
-];
+if (isset($_GET['manifest'])) {
+    header('Content-Type: application/manifest+json');
+    echo json_encode([
+        "name" => "NOCECO App",
+        "short_name" => "NOCECO",
+        "start_url" => "home.php",
+        "display" => "standalone",
+        "background_color" => "#F5F5F7",
+        "theme_color" => "#1D1D1F",
+        "orientation" => "portrait-primary",
+        "icons" => [
+            [
+                "src" => "../images/NOCECO.png",
+                "sizes" => "192x192",
+                "type" => "image/png",
+                "purpose" => "any maskable"
+            ],
+            [
+                "src" => "../images/NOCECO.png",
+                "sizes" => "512x512",
+                "type" => "image/png",
+                "purpose" => "any maskable"
+            ]
+        ]
+    ]);
+    exit();
+}
 
-// Calculate Total Rate Per KWH for the AI Assistant math
+// ---------------------------------------------------------------------
+// 2. MOBILE-READY SERVICE WORKER (CREDENTIALS INCLUDED)
+// ---------------------------------------------------------------------
+if (isset($_GET['sw'])) {
+    header('Content-Type: application/javascript');
+    
+    // Core URLs to always cache
+    $urlsToCache = [
+        'home.php',
+        'home.php?manifest=1',
+        'home.php?ajax=history',
+        'home.php?ajax=profile',
+        'home.php?ajax=chatbot'
+    ];
+    
+    $invoiceCount = 0;
+    
+    // Fetch ALL their specific invoice URLs to pre-cache
+    if (isset($_SESSION['client_account'])) {
+        $stmtList = $pdo->prepare("SELECT invoice_no FROM billing_invoices WHERE account_no = ?");
+        $stmtList->execute([$_SESSION['client_account']]);
+        $invoicesList = $stmtList->fetchAll(PDO::FETCH_ASSOC);
+        $invoiceCount = count($invoicesList);
+        
+        foreach ($invoicesList as $invItem) {
+            $urlsToCache[] = 'home.php?ajax=get_invoice&invoice_no=' . $invItem['invoice_no'];
+        }
+    }
+    
+    $jsonUrls = json_encode($urlsToCache);
+    
+    echo "
+    const CACHE_NAME = 'noceco-mobile-v1-count-{$invoiceCount}';
+    const urlsToCache = {$jsonUrls};
+    
+    self.addEventListener('install', event => {
+        self.skipWaiting();
+        event.waitUntil(
+            caches.open(CACHE_NAME).then(cache => {
+                // CRITICAL FIX: Send PHP Session cookies during background caching!
+                return Promise.all(
+                    urlsToCache.map(url => {
+                        return fetch(url, { credentials: 'same-origin' })
+                            .then(response => {
+                                if(response.ok) {
+                                    return cache.put(url, response);
+                                }
+                            })
+                            .catch(err => console.log('Mobile Cache Skip:', url));
+                    })
+                );
+            })
+        );
+    });
+
+    self.addEventListener('activate', event => {
+        event.waitUntil(
+            caches.keys().then(cacheNames => {
+                return Promise.all(
+                    cacheNames.map(cacheName => {
+                        if (cacheName !== CACHE_NAME && cacheName.startsWith('noceco-mobile-')) {
+                            return caches.delete(cacheName);
+                        }
+                    })
+                );
+            }).then(() => clients.claim())
+        );
+    });
+
+    self.addEventListener('fetch', event => {
+        if (event.request.method !== 'GET') return;
+        
+        // Network-First with Cache Fallback
+        event.respondWith(
+            fetch(event.request, { credentials: 'same-origin' })
+                .then(response => {
+                    const responseClone = response.clone();
+                    caches.open(CACHE_NAME).then(cache => {
+                        cache.put(event.request, responseClone);
+                    });
+                    return response;
+                })
+                .catch(() => {
+                    return caches.match(event.request);
+                })
+        );
+    });
+    ";
+    exit();
+}
+
+// ---------------------------------------------------------------------
+// 3. DYNAMIC STANDARD RATES DATA 
+// ---------------------------------------------------------------------
+$stmtRates = $pdo->prepare("SELECT charge_description, charge_type, current_rate, is_vatable FROM billing_rates_catalog WHERE status = 'Active'");
+$stmtRates->execute();
+$dbRates = $stmtRates->fetchAll(PDO::FETCH_ASSOC);
+
+$standardRates = [];
 $totalRatePerKwh = 0;
-foreach ($standardRates as $rate) {
-    if ($rate[1] === 'Per_KWH') {
-        $totalRatePerKwh += $rate[2];
+
+foreach ($dbRates as $row) {
+    $standardRates[] = [
+        $row['charge_description'],
+        $row['charge_type'],
+        (float)$row['current_rate'],
+        (int)$row['is_vatable']
+    ];
+    if ($row['charge_type'] === 'Per_KWH') {
+        $totalRatePerKwh += (float)$row['current_rate'];
     }
 }
 
@@ -65,7 +170,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['webhook']) && $_GET['w
 }
 
 // ---------------------------------------------------------------------
-// SECURITY
+// SECURITY & SESSION DATA
 // ---------------------------------------------------------------------
 if (!isset($_SESSION['client_account']) || $_SESSION['role'] !== 'Consumer') {
     header("Location: ../index.php");
@@ -76,6 +181,11 @@ $account_no = $_SESSION['client_account'];
 $client_name = $_SESSION['client_name'];
 $meter_no = $_SESSION['meter_no'];
 $client_address = $_SESSION['address'] ?? 'Himamaylan City, Negros Occidental';
+
+$stmtStatus = $pdo->prepare("SELECT status FROM clients WHERE account_no = ?");
+$stmtStatus->execute([$account_no]);
+$clientStatusRecord = $stmtStatus->fetch();
+$client_status = $clientStatusRecord ? $clientStatusRecord['status'] : 'Connected';
 
 // ---------------------------------------------------------------------
 // AJAX: PASSWORD UPDATE
@@ -116,19 +226,17 @@ if (isset($_GET['action']) && $_GET['action'] === 'update_password') {
 }
 
 // ---------------------------------------------------------------------
-// AJAX ENDPOINTS
+// AJAX ENDPOINTS (Tabs & Modal)
 // ---------------------------------------------------------------------
 if (isset($_GET['ajax'])) {
     $tab = $_GET['ajax'];
 
-    // --- TAB: BILLING HISTORY ---
     if ($tab === 'history') {
         $stmt = $pdo->prepare("SELECT * FROM billing_invoices WHERE account_no = ? ORDER BY reading_date DESC");
         $stmt->execute([$account_no]);
         $history = $stmt->fetchAll();
         
         $recentBills = array_slice($history, 0, 3);
-        
         $comparisonHtml = '';
         if (count($recentBills) >= 2) {
             $curr = $recentBills[0];
@@ -160,11 +268,7 @@ if (isset($_GET['ajax'])) {
             </div>';
         }
 
-        $carouselHtml = '<div class="mb-8">';
-        $carouselHtml .= '<h3 class="text-xs font-bold text-gray-400 theme-text-secondary uppercase tracking-widest mb-4">Past 3 Months Overview</h3>';
-        $carouselHtml .= $comparisonHtml;
-        
-        $carouselHtml .= '<div class="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-4 custom-scrollbar">';
+        $carouselHtml = '<div class="mb-8"><h3 class="text-xs font-bold text-gray-400 theme-text-secondary uppercase tracking-widest mb-4">Past 3 Months Overview</h3>'.$comparisonHtml.'<div class="flex overflow-x-auto snap-x snap-mandatory gap-4 pb-4 custom-scrollbar">';
         
         foreach ($recentBills as $bill) {
             $effRate = $bill['kwh_used'] > 0 ? ($bill['amount_due'] / $bill['kwh_used']) : 0;
@@ -201,19 +305,15 @@ if (isset($_GET['ajax'])) {
         $carouselHtml .= '</div></div>';
 
         $html = '<div class="bg-white theme-card rounded-[24px] shadow-apple border border-gray-100 overflow-hidden p-6 md:p-8">';
-        
         if (empty($history)) {
             $html .= '<div class="p-8 text-center text-gray-500 theme-text-secondary text-sm">No billing records found.</div>';
         } else {
             $html .= $carouselHtml;
-            $html .= '<div class="border-t border-gray-100 pt-8">';
-            $html .= '<div class="flex justify-between items-center mb-4"><h3 class="text-lg font-bold text-gray-900 theme-text-primary">Complete History</h3><span class="text-xs bg-gray-100 theme-card-inner text-gray-500 theme-text-secondary px-3 py-1 rounded-full font-bold">'.count($history).' Records</span></div>';
-            $html .= '<div class="divide-y divide-gray-100">';
+            $html .= '<div class="border-t border-gray-100 pt-8"><div class="flex justify-between items-center mb-4"><h3 class="text-lg font-bold text-gray-900 theme-text-primary">Complete History</h3><span class="text-xs bg-gray-100 theme-card-inner text-gray-500 theme-text-secondary px-3 py-1 rounded-full font-bold">'.count($history).' Records</span></div><div class="divide-y divide-gray-100">';
             
             foreach ($history as $bill) {
                 $badge = $bill['status'] === 'Paid' ? '<span class="text-green-500 font-bold bg-green-50 px-2 py-1 rounded text-[10px] uppercase border border-green-100 tracking-wider">PAID</span>' : '<span class="text-red-500 font-bold bg-red-50 px-2 py-1 rounded text-[10px] uppercase border border-red-100 tracking-wider">UNPAID</span>';
                 
-                // ADDED ONCLICK FUNCTION HERE TO TRIGGER INVOICE MODAL
                 $html .= '
                 <div onclick="viewInvoice(\''.$bill['invoice_no'].'\')" class="cursor-pointer py-4 flex justify-between items-center hover:bg-gray-50 hover:opacity-80 transition-colors rounded-xl px-2 -mx-2">
                     <div class="flex items-center gap-4">
@@ -234,11 +334,9 @@ if (isset($_GET['ajax'])) {
             $html .= '</div></div>';
         }
         $html .= '</div>';
-        
         echo $html; exit();
     }
 
-    // --- TAB: PROFILE SETTINGS WITH THEME SELECTOR ---
     if ($tab === 'profile') {
         $stmt = $pdo->prepare("SELECT * FROM clients WHERE account_no = ?");
         $stmt->execute([$account_no]);
@@ -258,11 +356,6 @@ if (isset($_GET['ajax'])) {
                 <div class="flex justify-end mt-4"><button type="submit" class="bg-gray-100 hover:bg-gray-200 text-gray-800 px-6 py-3 rounded-xl font-bold transition-colors text-sm">Save Information</button></div>
             </form>
             
-            <hr class="my-8 border-gray-100 theme-border">
-            
-           
-
-
             <hr class="my-8 border-gray-100 theme-border">
             
             <h3 class="text-lg font-bold text-gray-900 theme-text-primary mb-6 flex items-center"><svg class="w-5 h-5 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8V7z"></path></svg> Security & Password</h3>
@@ -300,7 +393,6 @@ if (isset($_GET['ajax'])) {
         echo $html; exit();
     }
 
-    // --- TAB: GET SPECIFIC INVOICE FOR MODAL (CLICKED FROM HISTORY) ---
     if ($tab === 'get_invoice') {
         $invNo = $_GET['invoice_no'] ?? '';
         $stmtInv = $pdo->prepare("SELECT * FROM billing_invoices WHERE invoice_no = ? AND account_no = ?");
@@ -308,11 +400,10 @@ if (isset($_GET['ajax'])) {
         $invoiceData = $stmtInv->fetch();
 
         if (!$invoiceData) {
-            echo '<div class="p-10 text-center text-gray-500">Invoice not found.</div>';
+            echo '<div class="p-10 text-center text-gray-500">Invoice not found in cache or server.</div>';
             exit();
         }
 
-        // Penalty Logic check
         $penaltyAmount = 0;
         $today = strtotime(date('Y-m-d'));
         if ($invoiceData['status'] === 'Unpaid' && $today > strtotime($invoiceData['due_date'])) {
@@ -321,8 +412,6 @@ if (isset($_GET['ajax'])) {
             $penaltyAmount = (float)$invoiceData['penalty_surcharge'];
         }
         $amountAfterDue = $invoiceData['amount_due'] + $penaltyAmount;
-
-        // Render Invoice Template purely in HTML
         ?>
         <div id="invoicePaper" class="bg-white shadow-2xl relative text-left flex flex-col" style="width: 794px; min-height: 1123px; padding: 40px; box-sizing: border-box; margin:0 auto;">
             <div class="flex items-center justify-between border-b-2 border-gray-800 pb-6 mb-6">
@@ -418,7 +507,6 @@ if (isset($_GET['ajax'])) {
         exit();
     }
 
-    // --- TAB: AI CHATBOT ---
     if ($tab === 'chatbot') {
         global $totalRatePerKwh;
         $html = '
@@ -478,7 +566,6 @@ foreach ($unpaidBills as $bill) {
     $overallTotal += $amt;
 }
 
-// If no unpaid bill, fetch the latest paid bill for the invoice modal
 if (!$currentBill) {
     $stmtLatest = $pdo->prepare("SELECT * FROM billing_invoices WHERE account_no = ? ORDER BY reading_date DESC LIMIT 1");
     $stmtLatest->execute([$account_no]);
@@ -503,8 +590,16 @@ foreach (array_reverse($billingHistory) as $bh) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>My NOCECO Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>NOCECO</title>
+    
+    <!-- PWA MANIFEST & iOS META TAGS -->
+    <link rel="manifest" href="home.php?manifest=1">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="NOCECO">
+    <link rel="apple-touch-icon" href="../images/NOCECO.png">
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -527,6 +622,9 @@ foreach (array_reverse($billingHistory) as $bh) {
         .app-gradient { background: linear-gradient(135deg, #1D1D1F 0%, #353538 100%); }
         .nav-active { background-color: rgba(219, 161, 17, 0.1); color: #DBA111 !important; font-weight: bold; }
         
+        body { padding-top: env(safe-area-inset-top); }
+        .pb-safe { padding-bottom: calc(env(safe-area-inset-bottom) + 12px); }
+
         /* THEME SYSTEM STYLES */
         body.theme-dark { background-color: #111827; color: #f9fafb; }
         body.theme-dark .theme-card { background-color: #1f2937 !important; border-color: #374151 !important; color: #fff; }
@@ -535,19 +633,34 @@ foreach (array_reverse($billingHistory) as $bh) {
         body.theme-dark .theme-text-secondary { color: #9ca3af !important; }
         body.theme-dark .theme-input { background-color: #374151 !important; border-color: #4b5563 !important; color: #fff !important; }
         body.theme-dark .theme-card-icon { background-color: #4b5563 !important; }
-
-        body.theme-gradient { background: linear-gradient(135deg, #1e3a8a, #9333ea); color: #fff; }
-        body.theme-gradient .theme-card { background-color: rgba(255, 255, 255, 0.1) !important; backdrop-filter: blur(10px); border-color: rgba(255,255,255,0.2) !important; color: #fff; }
-        body.theme-gradient .theme-card-inner { background-color: rgba(255, 255, 255, 0.1) !important; border-color: rgba(255, 255, 255, 0.2) !important; }
-        body.theme-gradient .theme-text-primary { color: #ffffff !important; }
-        body.theme-gradient .theme-text-secondary { color: #e5e7eb !important; }
-        body.theme-gradient .theme-input { background-color: rgba(255, 255, 255, 0.2) !important; border-color: rgba(255, 255, 255, 0.3) !important; color: #fff !important; }
-        body.theme-gradient .theme-card-icon { background-color: rgba(255, 255, 255, 0.2) !important; color: #fff !important; }
     </style>
 </head>
-<body class="bg-noceco-bg text-noceco-text flex h-screen overflow-hidden pb-16 md:pb-0 transition-colors duration-300">
+<body class="bg-noceco-bg text-noceco-text flex h-screen overflow-hidden pb-16 md:pb-0 transition-colors duration-300 relative">
+    
+    <!-- OFFLINE BANNER -->
+    <div id="offline-banner" class="hidden bg-red-500 text-white text-center text-xs font-bold py-1.5 z-[100] absolute top-0 w-full shadow-md">
+        ⚠️ You are currently offline. Viewing cached app data.
+    </div>
+    
+    <!-- SYNC SUCCESS BANNER -->
+    <div id="sync-banner" class="opacity-0 transition-opacity duration-1000 bg-green-500 text-white text-center text-xs font-bold py-1.5 z-[100] absolute top-0 w-full shadow-md pointer-events-none">
+        ✅ Offline Sync Complete. App is ready for offline use.
+    </div>
 
-    <aside class="w-64 theme-card bg-white border-r border-gray-200 flex flex-col justify-between hidden md:flex z-20">
+    <!-- PWA INSTALL PROMPT FOR MOBILE -->
+    <div id="install-prompt" class="hidden fixed bottom-20 left-4 right-4 bg-white/90 backdrop-blur-md border border-gray-200 p-4 rounded-2xl shadow-2xl z-[90] flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <img src="../images/NOCECO.png" class="w-10 h-10 rounded-xl shadow-sm" alt="App Icon">
+            <div>
+                <p class="font-bold text-sm text-gray-900">Install NOCECO App</p>
+                <p class="text-xs text-gray-500" id="install-text">Add to home screen for offline access</p>
+            </div>
+        </div>
+        <button id="install-btn" class="bg-noceco-mustard text-white px-4 py-2 rounded-full text-xs font-bold shadow-sm">Install</button>
+        <button onclick="document.getElementById('install-prompt').classList.add('hidden');" class="ml-2 text-gray-400 hover:text-gray-600">✕</button>
+    </div>
+
+    <aside class="w-64 theme-card bg-white border-r border-gray-200 flex flex-col justify-between hidden md:flex z-20 mt-6">
         <div>
             <div class="h-20 flex items-center px-8 border-b border-gray-100 theme-border">
                 <div class="w-8 h-8 rounded-full bg-noceco-mustard flex items-center justify-center mr-3 shadow-apple-sm">
@@ -558,20 +671,16 @@ foreach (array_reverse($billingHistory) as $bh) {
             <nav class="p-4 space-y-2">
                 <button onclick="window.location.reload();" class="w-full flex items-center px-4 py-3 bg-noceco-bg/80 theme-card-inner text-noceco-mustard font-medium rounded-xl transition-colors text-left">
                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path></svg>
-                    My Dashboard
+                    Dashboard
                 </button>
                 <button onclick="loadTab('history', this)" class="nav-btn w-full flex items-center px-4 py-3 text-gray-500 theme-text-secondary hover:bg-gray-50 hover:opacity-80 rounded-xl transition-colors text-left">
                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-                    Billing History
+                    Bills
                 </button>
                 <button onclick="loadTab('chatbot', this)" class="nav-btn w-full flex items-center px-4 py-3 text-gray-500 theme-text-secondary hover:bg-gray-50 hover:opacity-80 rounded-xl transition-colors text-left">
                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
                     AI Assistant
                 </button>
-                <a href="mybill.php" class="w-full flex items-center px-4 py-3 text-gray-500 theme-text-secondary hover:bg-gray-50 hover:opacity-80 rounded-xl transition-colors">
-                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
-                    Pay Online
-                </a>
                 <button onclick="loadTab('profile', this)" class="nav-btn w-full flex items-center px-4 py-3 text-gray-500 theme-text-secondary hover:bg-gray-50 hover:opacity-80 rounded-xl transition-colors text-left">
                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
                     Profile Settings
@@ -599,17 +708,13 @@ foreach (array_reverse($billingHistory) as $bh) {
             <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"></path></svg>
             <span class="text-[10px] font-medium">Ask AI</span>
         </button>
-        <a href="mybill.php" class="flex flex-col items-center text-gray-400 theme-text-secondary hover:text-noceco-mustard transition-colors">
-            <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path></svg>
-            <span class="text-[10px] font-medium">Pay</span>
-        </a>
         <button onclick="loadTab('profile', this)" class="nav-btn-mobile flex flex-col items-center text-gray-400 theme-text-secondary hover:text-noceco-mustard transition-colors">
             <svg class="w-6 h-6 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path></svg>
             <span class="text-[10px] font-medium">Profile</span>
         </button>
     </nav>
 
-    <main class="flex-1 overflow-y-auto w-full relative">
+    <main class="flex-1 overflow-y-auto w-full relative pt-6 md:pt-0">
         <header class="px-6 py-6 md:px-10 md:py-8 flex justify-between items-center bg-white/90 md:bg-transparent sticky top-0 z-[60] backdrop-blur-md">
             <div>
                 <h1 class="text-2xl font-bold tracking-tight theme-text-primary text-gray-900">Hello, <?php echo explode(' ', trim($client_name))[0]; ?>! 👋</h1>
@@ -619,25 +724,43 @@ foreach (array_reverse($billingHistory) as $bh) {
                 <div class="relative">
                     <button onclick="document.getElementById('notification-panel').classList.toggle('hidden');" class="p-2 bg-white theme-card rounded-full shadow-apple text-gray-400 hover:text-noceco-mustard transition-colors">
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
-                        <?php if ($hasUnpaid): ?>
+                        <?php if ($client_status === 'Disconnected' || $hasUnpaid): ?>
                             <span class="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-white theme-border"></span>
                         <?php endif; ?>
                     </button>
 
                     <div id="notification-panel" class="hidden absolute right-0 mt-3 w-80 bg-white theme-card rounded-2xl shadow-2xl border border-gray-100 overflow-hidden z-[70]">
-                        <div class="p-4 border-b border-gray-100 theme-border bg-gray-50 theme-card-inner"><h4 class="font-bold text-gray-900 theme-text-primary">Alerts</h4></div>
-                        <div class="p-4">
+                        <div class="p-4 border-b border-gray-100 theme-border bg-gray-50 theme-card-inner">
+                            <h4 class="font-bold text-gray-900 theme-text-primary">Alerts</h4>
+                        </div>
+                        <div class="p-4 space-y-4">
+                            <?php if ($client_status === 'Disconnected'): ?>
+                                <div class="flex items-start text-sm">
+                                    <div class="w-8 h-8 rounded-full bg-red-600 text-white flex items-center justify-center mr-3 shrink-0">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                                    </div>
+                                    <div>
+                                        <p class="font-bold text-red-600">Service Disconnected</p>
+                                        <p class="text-gray-500 theme-text-secondary mt-1">Your power line has been cut due to unpaid balances. Pay your balance to process reconnection.</p>
+                                    </div>
+                                </div>
+                                <?php if ($hasUnpaid): ?><hr class="border-gray-100 theme-border"><?php endif; ?>
+                            <?php endif; ?>
+
                             <?php if ($hasUnpaid): ?>
                                 <div class="flex items-start text-sm">
                                     <div class="w-8 h-8 rounded-full bg-red-50 text-red-500 flex items-center justify-center mr-3 shrink-0"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
                                     <div><p class="font-bold text-gray-900 theme-text-primary">Outstanding Balance Notice</p>
-                                    <p class="text-gray-500 theme-text-secondary mt-1">You have a total outstanding balance of Php <?php echo number_format($overallTotal, 2); ?>. Please pay immediately to avoid penalties or disconnection.</p></div>
+                                    <p class="text-gray-500 theme-text-secondary mt-1">You have a total outstanding balance of Php <?php echo number_format($overallTotal, 2); ?>.</p></div>
                                 </div>
-                            <?php else: ?>
+                            <?php endif; ?>
+                            
+                            <?php if ($client_status !== 'Disconnected' && !$hasUnpaid): ?>
                                 <p class="text-gray-500 theme-text-secondary text-sm text-center">You are all caught up!</p>
                             <?php endif; ?>
                         </div>
                     </div>
+
                 </div>
                 
                 <a href="logout.php" class="p-2 bg-white theme-card rounded-full shadow-apple text-red-400 hover:text-white hover:bg-red-500 transition-colors" title="Logout">
@@ -646,9 +769,20 @@ foreach (array_reverse($billingHistory) as $bh) {
             </div>
         </header>
 
-        <div id="main_content" class="px-4 md:px-10 pb-10 max-w-5xl mx-auto space-y-6 relative z-10">
+        <div id="main_content" class="px-4 md:px-10 pb-10 max-w-5xl mx-auto relative z-10">
             
-            <div class="app-gradient rounded-[24px] p-6 md:p-8 text-white shadow-apple relative overflow-hidden">
+            <?php if ($client_status === 'Disconnected'): ?>
+            <div class="bg-red-600 rounded-[24px] p-6 mb-6 shadow-[0_8px_30px_rgba(220,38,38,0.3)] flex flex-col md:flex-row items-center md:items-start gap-4 text-white text-center md:text-left relative overflow-hidden animate-pulse">
+                <div class="absolute -right-4 -top-4 w-24 h-24 bg-white/20 rounded-full blur-2xl"></div>
+                <svg class="w-12 h-12 shrink-0 md:mt-1 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                <div class="relative z-10">
+                    <h2 class="text-xl md:text-2xl font-black tracking-tight">URGENT: SERVICE DISCONNECTED</h2>
+                    <p class="text-sm md:text-base text-red-100 mt-1.5 leading-relaxed">Your electricity service is currently <strong>DISCONNECTED</strong> due to unpaid balances. Please settle your account immediately to process reconnection.</p>
+                </div>
+            </div>
+            <?php endif; ?>
+            
+            <div class="app-gradient rounded-[24px] p-6 md:p-8 text-white shadow-apple relative overflow-hidden mb-6">
                 <div class="absolute -right-10 -top-10 w-40 h-40 bg-noceco-mustard/20 rounded-full blur-2xl"></div>
                 <div class="flex justify-between items-start mb-6 relative z-10">
                     <div>
@@ -670,10 +804,12 @@ foreach (array_reverse($billingHistory) as $bh) {
                 </div>
 
                 <?php if ($hasUnpaid): ?>
-                    <a href="mybill.php" class="block text-center w-full bg-noceco-mustard hover:bg-noceco-mustardHover text-white font-bold py-4 rounded-xl transition-all shadow-[0_4px_14px_rgba(219,161,17,0.3)] relative z-10">
-                        Pay Bill Online
-                    </a>
-                    <p class="text-center text-xs text-gray-400 mt-3 relative z-10">Includes previous unpaid bills & applicable penalties.</p>
+                    <!-- YELLOW ORANGE BLUR GLASS GCASH BUTTON -->
+                    <button onclick="openGCash()" class="flex items-center justify-center w-full bg-gradient-to-r from-yellow-500/40 to-orange-500/40 backdrop-blur-lg border border-white/20 hover:from-yellow-500/60 hover:to-orange-500/60 text-white font-bold py-4 rounded-xl transition-all duration-300 shadow-[0_8px_32px_rgba(249,115,22,0.3)] hover:shadow-[0_12px_40px_rgba(249,115,22,0.5)] relative z-10 tracking-wide">
+                        <svg class="w-5 h-5 mr-2 drop-shadow-md" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                        <span class="drop-shadow-md">Pay Directly via GCash</span>
+                    </button>
+                    <p class="text-center text-xs text-gray-300 mt-3 relative z-10">Includes previous unpaid bills & applicable penalties.</p>
                 <?php else: ?>
                     <div class="w-full bg-white/10 text-white font-medium py-4 rounded-xl text-center border border-white/20 relative z-10">
                         You have no pending bills.
@@ -681,7 +817,7 @@ foreach (array_reverse($billingHistory) as $bh) {
                 <?php endif; ?>
             </div>
 
-            <div class="bg-white theme-card rounded-[24px] p-6 md:p-8 shadow-apple border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="bg-white theme-card rounded-[24px] p-6 md:p-8 shadow-apple border border-gray-100 flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
                 <div class="text-center md:text-left">
                     <h3 class="text-sm font-bold text-gray-500 theme-text-secondary uppercase tracking-widest mb-1">Latest Consumption</h3>
                     <p class="text-3xl font-black text-gray-900 theme-text-primary tracking-tight">
@@ -706,7 +842,6 @@ foreach (array_reverse($billingHistory) as $bh) {
 
     <div id="invoiceModal" class="hidden fixed inset-0 z-[100] bg-black/80 backdrop-blur-sm flex justify-center items-start overflow-x-hidden overflow-y-auto pt-4 md:pt-10 pb-20 custom-scrollbar w-full">
         <div id="invoiceWrapper" class="w-full max-w-[850px] flex flex-col items-center">
-            
             <div class="w-full flex justify-between items-center mb-4 px-4 sticky top-0 z-20">
                 <button onclick="closeInvoiceModal()" class="text-white hover:text-red-400 font-bold bg-black/70 px-4 py-2 rounded-full backdrop-blur shadow-lg">
                     Close ✕
@@ -716,7 +851,6 @@ foreach (array_reverse($billingHistory) as $bh) {
                     Download HD
                 </button>
             </div>
-
             <div id="invoiceContainer" class="origin-top transition-transform duration-200 ease-out">
                 <div id="invoicePaper" class="bg-white shadow-2xl relative flex items-center justify-center" style="width: 794px; min-height: 1123px; padding: 40px; box-sizing: border-box; margin: 0 auto;">
                     <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-noceco-mustard"></div>
@@ -726,24 +860,90 @@ foreach (array_reverse($billingHistory) as $bh) {
     </div>
 
     <script>
-        // 1. UI Theme Initializer
-        function setTheme(theme) {
-            localStorage.setItem('ui_theme', theme);
-            applyTheme(theme);
-        }
-        function applyTheme(theme) {
-            const body = document.body;
-            body.classList.remove('theme-light', 'theme-dark', 'theme-gradient');
-            body.classList.add(`theme-${theme}`);
-        }
-        
-        // Load Theme on DOM Load
-        document.addEventListener('DOMContentLoaded', () => {
-            applyTheme(localStorage.getItem('ui_theme') || 'light');
-            initChart();
+        // ---------------------------------------------------------------------
+        // PWA SERVICE WORKER (AUTO-FETCH EVERYTHING NATIVELY)
+        // ---------------------------------------------------------------------
+        window.addEventListener('load', () => {
+            if ('serviceWorker' in navigator) {
+                navigator.serviceWorker.register('home.php?sw=1')
+                    .then(reg => {
+                        // Show subtle sync success indicator for 3 seconds
+                        setTimeout(() => {
+                            const syncBanner = document.getElementById('sync-banner');
+                            if(syncBanner) {
+                                syncBanner.classList.remove('opacity-0');
+                                setTimeout(() => syncBanner.classList.add('opacity-0'), 3000);
+                            }
+                        }, 2000);
+                    })
+                    .catch(err => console.log('❌ App Cache Failed', err));
+            }
+
+            const updateOnlineStatus = () => {
+                const banner = document.getElementById('offline-banner');
+                if (navigator.onLine) {
+                    banner.classList.add('hidden');
+                } else {
+                    banner.classList.remove('hidden');
+                }
+            };
+            window.addEventListener('online', updateOnlineStatus);
+            window.addEventListener('offline', updateOnlineStatus);
+            updateOnlineStatus();
+
+            // Handle Mobile PWA Install Prompt
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+            
+            let deferredPrompt;
+            const installPrompt = document.getElementById('install-prompt');
+            const installBtn = document.getElementById('install-btn');
+            const installText = document.getElementById('install-text');
+
+            if (!isStandalone) {
+                if (isIOS) {
+                    // iOS Instructions
+                    installText.innerHTML = "Tap the Share icon <br>then 'Add to Home Screen'";
+                    installBtn.classList.add('hidden');
+                    installPrompt.classList.remove('hidden');
+                } else {
+                    // Android Prompt
+                    window.addEventListener('beforeinstallprompt', (e) => {
+                        e.preventDefault();
+                        deferredPrompt = e;
+                        installPrompt.classList.remove('hidden');
+                    });
+
+                    installBtn.addEventListener('click', async () => {
+                        if (deferredPrompt) {
+                            deferredPrompt.prompt();
+                            const { outcome } = await deferredPrompt.userChoice;
+                            if (outcome === 'accepted') {
+                                installPrompt.classList.add('hidden');
+                            }
+                            deferredPrompt = null;
+                        }
+                    });
+                }
+            }
         });
 
-        // 2. Chart.js Initialization
+        // ---------------------------------------------------------------------
+        // GCASH DEEP LINKING 
+        // ---------------------------------------------------------------------
+        function openGCash() {
+            const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const isAndroid = /Android/.test(navigator.userAgent);
+            
+            if (isAndroid) {
+                window.location.href = "intent://#Intent;package=com.globe.gcash.android;scheme=gcash;end";
+            } else if (isIOS) {
+                window.location.href = "gcash://";
+            } else {
+                window.open("https://www.gcash.com", "_blank");
+            }
+        }
+
         function initChart() {
             const canvas = document.getElementById('kwhChart');
             if (!canvas) return;
@@ -802,8 +1002,11 @@ foreach (array_reverse($billingHistory) as $bh) {
                 }
             });
         }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            initChart();
+        });
 
-        // 3. AJAX Tab Navigation
         function loadTab(tabName, element) {
             document.querySelectorAll('.nav-btn, .nav-btn-mobile').forEach(btn => {
                 btn.classList.remove('nav-active', 'text-noceco-mustard');
@@ -823,11 +1026,10 @@ foreach (array_reverse($billingHistory) as $bh) {
                     contentArea.innerHTML = html;
                 })
                 .catch(err => {
-                    contentArea.innerHTML = '<p class="text-red-500 text-center">Failed to load content.</p>';
+                    contentArea.innerHTML = '<div class="text-white text-center p-10 font-bold bg-black/50 rounded-xl backdrop-blur mt-10">⚠️ An unexpected error occurred loading from cache.</div>';
                 });
         }
 
-        // 4. Password Visibility Toggle
         window.toggleVisibility = function(inputId, iconId) {
             const input = document.getElementById(inputId);
             const icon = document.getElementById(iconId);
@@ -840,7 +1042,6 @@ foreach (array_reverse($billingHistory) as $bh) {
             }
         };
 
-        // 5. Handle AJAX Password Update
         window.updatePassword = function(event) {
             event.preventDefault();
             const current_pwd = document.getElementById('current_pwd').value;
@@ -879,7 +1080,6 @@ foreach (array_reverse($billingHistory) as $bh) {
             });
         };
 
-        // 6. AI Chatbot Logic
         window.sendChatMessage = function(rate) {
             const input = document.getElementById('chat-input');
             const message = input.value.trim();
@@ -917,7 +1117,6 @@ foreach (array_reverse($billingHistory) as $bh) {
             }, 600);
         };
 
-        // 7. Modal Mobile Scaling, AJAX Invoice & HTML2Canvas Logic
         function scaleInvoiceForMobile() {
             const wrapper = document.getElementById('invoiceWrapper');
             const container = document.getElementById('invoiceContainer');
@@ -954,13 +1153,8 @@ foreach (array_reverse($billingHistory) as $bh) {
                     scaleInvoiceForMobile();
                 })
                 .catch(err => {
-                    container.innerHTML = '<div class="text-white text-center p-10">Error loading invoice data.</div>';
+                    container.innerHTML = '<div class="text-white text-center p-10 font-bold bg-black/50 rounded-xl backdrop-blur">⚠️ Invoice not found in local cache. Please connect to the internet.</div>';
                 });
-        }
-
-        // For the main dashboard button logic
-        function openInvoiceModal() {
-            viewInvoice('<?php echo $invoiceData ? $invoiceData['invoice_no'] : ''; ?>');
         }
 
         function closeInvoiceModal() {

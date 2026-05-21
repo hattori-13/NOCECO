@@ -1,7 +1,9 @@
 <?php
+// 1. ADDED ob_start(): This prevents "Headers already sent" errors that break redirects.
+ob_start(); 
 session_start();
 
-// Include Database Connection (Path is direct since index.php is in the root folder)
+// Include Database Connection
 require_once 'db/dbcon.php';
 
 // If a consumer is already logged in, send them straight to their dashboard
@@ -32,12 +34,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             $client = $stmt->fetch();
 
             if ($client && password_verify($password, $client['password_hash'])) {
-                // Success! Set Consumer Session Variables (Allows both Connected and Disconnected users)
+                // Success! Set Consumer Session Variables
                 $_SESSION['client_account'] = $client['account_no'];
                 $_SESSION['client_id'] = $client['id_number'];
                 $_SESSION['client_name'] = $client['first_name'] . ' ' . $client['last_name'];
                 $_SESSION['meter_no'] = $client['meter_no'];
-                $_SESSION['client_status'] = $client['status']; // Storing status in case dashboard needs it
+                $_SESSION['client_status'] = $client['status']; 
                 $_SESSION['role'] = 'Consumer';
                 
                 // Redirect to their private portal
@@ -83,9 +85,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
       }
     </script>
     <style>
-        /* Creates the beautiful background using your specific wave design */
         body {
-            /* Note: Ensure you save your uploaded background image as assets/noceco-bg.png */
             background-image: url('assets/noceco-bg.png');
             background-size: cover;
             background-position: bottom center;
@@ -93,7 +93,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             background-attachment: fixed;
         }
         
-        /* Frosted glass effect for the login card */
         .glass-card {
             background: rgba(255, 255, 255, 0.90);
             backdrop-filter: blur(12px);
@@ -123,7 +122,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             </div>
         <?php endif; ?>
 
-        <form action="index.php" method="POST" class="space-y-5">
+        <!-- 2. CHANGED action to empty string. This forces it to submit to itself regardless of the file name. -->
+        <form action="" method="POST" class="space-y-5">
             
             <div>
                 <label for="identifier" class="block text-sm font-semibold text-gray-700 mb-1.5">Account No. or 10-Digit ID</label>
@@ -167,14 +167,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         const identifierInput = document.getElementById('identifier');
         
         identifierInput.addEventListener('input', function (e) {
-            // Prevent interference if the user is hitting backspace
             if (e.inputType === 'deleteContentBackward') return;
             
-            // Strip out any non-numeric characters the user might type
             let val = this.value.replace(/\D/g, ''); 
             let formatted = '';
             
-            // Apply the NOCECO Hyphen Format
             if (val.length > 0) {
                 formatted += val.substring(0, 2);
             }

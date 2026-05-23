@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Apr 27, 2026 at 04:21 PM
+-- Generation Time: May 23, 2026 at 03:24 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -388,7 +388,7 @@ CREATE TABLE `system_staff` (
   `username` varchar(50) NOT NULL,
   `password_hash` varchar(255) NOT NULL,
   `full_name` varchar(100) NOT NULL,
-  `role` enum('Main Administrator','Cashier','Meter Reader') NOT NULL,
+  `role` enum('Main Administrator','Cashier','Meter Reader','Staff') NOT NULL,
   `status` enum('Active','Inactive') DEFAULT 'Active',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -400,7 +400,10 @@ CREATE TABLE `system_staff` (
 INSERT INTO `system_staff` (`staff_id`, `username`, `password_hash`, `full_name`, `role`, `status`, `created_at`) VALUES
 (1, 'kert', '$2y$10$5t9WwnBwC5jEMPVUytwREeEdJeeWB1hKwbbNifau7X7j/ddd9euwC', 'KERT BRYAN DINGCONG', 'Main Administrator', 'Active', '2026-04-26 05:38:23'),
 (2, 'john123', '$2y$10$jpUnRViwM414hMrHob9i6OZJZxjjy2ZQ1PF0I17CAjrAyp9hGWu8O', 'JOHN DOE', 'Meter Reader', 'Active', '2026-04-26 07:40:34'),
-(3, 'alyn', '$2y$10$.KOh57O.W9PeOX44pFC19ud9yEnQxrd.1hsD0e3ApUu0f2huYYMKK', 'ALYN ATIDO', 'Cashier', 'Active', '2026-04-26 13:10:03');
+(3, 'alyn', '$2y$10$.KOh57O.W9PeOX44pFC19ud9yEnQxrd.1hsD0e3ApUu0f2huYYMKK', 'ALYN ATIDO', 'Cashier', 'Active', '2026-04-26 13:10:03'),
+(4, 'staff', '$2y$10$TKh8H1.PfQx37YgCzwiKb.KjNyWgaHb9cbcoQgdIVFlYg7B77UdFm', 'Customer Service Desk', 'Staff', 'Active', '2026-05-23 07:21:09'),
+(5, 'new_staff', '$2y$10$TKh8H1.PfQx37YgCzwiKb.KjNyWgaHb9cbcoQgdIVFlYg7B77UdFm', 'Front Desk Representative', 'Staff', 'Active', '2026-05-23 07:28:40'),
+(6, 'lyka', '$2y$10$ZmoUTRwO6tnr4M0uxdHBM.UX/96m6lhGZCmAJbysEQmf/YBkgRjwi', 'PRINCESS JANE LYKA VIRGIN', 'Staff', 'Active', '2026-05-23 07:31:57');
 
 -- --------------------------------------------------------
 
@@ -521,7 +524,7 @@ ALTER TABLE `sms_logs`
 -- AUTO_INCREMENT for table `system_staff`
 --
 ALTER TABLE `system_staff`
-  MODIFY `staff_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `staff_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `website_content`

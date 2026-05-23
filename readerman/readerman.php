@@ -24,21 +24,18 @@ if (isset($_SESSION['flash_msg'])) {
     $messageType = $_SESSION['flash_type'];
     $generatedInvoice = $_SESSION['flash_invoice'] ?? null;
 
-    unset($_SESSION['flash_msg']);
-    unset($_SESSION['flash_type']);
-    unset($_SESSION['flash_invoice']);
+    unset($_SESSION['flash_msg'], $_SESSION['flash_type'], $_SESSION['flash_invoice']);
 }
 
 // ---------------------------------------------------------------------
-// STEP 1: SEARCH FOR ACCOUNT (Detects if Already Billed)
+// STEP 1: SEARCH FOR ACCOUNT
 // ---------------------------------------------------------------------
 if (isset($_GET['search_account']) && !empty(trim($_GET['search_account']))) {
     $search_term = trim($_GET['search_account']);
-    $clean_term = str_replace('-', '', $search_term); // Allow searching without hyphens
-    $current_billing_month = date('F Y'); // e.g., April 2026
+    $clean_term = str_replace('-', '', $search_term); 
+    $current_billing_month = date('F Y'); 
     
     try {
-        // Smart Search: Looks for Account No (with or without hyphens) OR Meter No.
         $stmt = $pdo->prepare("SELECT account_no, first_name, last_name, meter_no, contact_number, address, consumer_type 
                                FROM clients 
                                WHERE (account_no = ? OR REPLACE(account_no, '-', '') = ? OR meter_no = ?) 
@@ -55,11 +52,9 @@ if (isset($_GET['search_account']) && !empty(trim($_GET['search_account']))) {
             $existingBill = $stmtCheck->fetch();
 
             if ($existingBill) {
-                // ACCOUNT ALREADY BILLED! Retrieve exact 31 lines and show the receipt.
                 $message = "Notice: This account was already billed for $current_billing_month.";
                 $messageType = "success";
 
-                // Fetch Line Items and join with Catalog to get Type (Per_KWH) and VATability
                 $stmtLines = $pdo->prepare("
                     SELECT l.charge_description, l.rate_applied, l.calculated_amount, c.charge_type, c.is_vatable 
                     FROM invoice_line_items l
@@ -81,7 +76,6 @@ if (isset($_GET['search_account']) && !empty(trim($_GET['search_account']))) {
                     if ($is_vat_item) {
                         $explicit_vat_total += $amt;
                     } else {
-                        // Reconstruct VAT grouping for the receipt summary
                         if (isset($line['is_vatable']) && $line['is_vatable'] == 1) {
                             $vatable_sales += $amt;
                         } else {
@@ -98,7 +92,6 @@ if (isset($_GET['search_account']) && !empty(trim($_GET['search_account']))) {
                     ];
                 }
 
-                // Construct the UI object
                 $generatedInvoice = [
                     'invoice_no' => $existingBill['invoice_no'],
                     'account_no' => $account_no,
@@ -119,11 +112,9 @@ if (isset($_GET['search_account']) && !empty(trim($_GET['search_account']))) {
                     'grand_total' => $existingBill['amount_due']
                 ];
                 
-                // Clear clientData so the Input Reading form does NOT show
                 $clientData = null; 
 
             } else {
-                // NOT BILLED YET: Fetch previous reading to show the Input Form
                 $stmtLastRead = $pdo->prepare("SELECT current_reading FROM billing_invoices WHERE account_no = ? ORDER BY reading_date DESC LIMIT 1");
                 $stmtLastRead->execute([$account_no]);
                 $lastRecord = $stmtLastRead->fetch();
@@ -151,7 +142,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     $billing_month = date('F Y'); 
     $due_date = date('Y-m-d', strtotime($reading_date . ' + 9 days'));
 
-    // FINAL ANTI-DUPLICATE POST LOCK
     $stmtCheck = $pdo->prepare("SELECT invoice_no FROM billing_invoices WHERE account_no = ? AND billing_month = ?");
     $stmtCheck->execute([$account_no, $billing_month]);
 
@@ -190,7 +180,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
 
             foreach ($rates as $rate) {
                 $amount = 0;
-                
                 if ($rate['charge_type'] == 'Per_KWH') {
                     $amount = $kwh_used * $rate['current_rate'];
                 } elseif ($rate['charge_type'] == 'Per_Customer' || $rate['charge_type'] == 'Fixed') {
@@ -235,7 +224,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
 
             $pdo->commit();
             
-            // PRG PATTERN: SESSION FLASH TO PREVENT REFRESH DUPLICATION
             $_SESSION['flash_msg'] = "Bill successfully generated for $account_no.";
             $_SESSION['flash_type'] = "success";
             $_SESSION['flash_invoice'] = [
@@ -250,7 +238,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                 'explicit_vat_total' => $explicit_vat_total, 'grand_total' => $grand_total
             ];
 
-            // Redirect to self to clear POST memory
             header("Location: readerman.php");
             exit();
 
@@ -270,6 +257,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Field Reader | NOCECO</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/html5-qrcode"></script>
     <script>
       tailwind.config = {
         theme: {
@@ -288,22 +276,114 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         .custom-scrollbar::-webkit-scrollbar { display: block; width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
+        
+        /* THERMAL PRINTER SPECIFIC CSS (57x40mm) */
+        @media print {
+            body * { visibility: hidden; }
+            .print-hide { display: none !important; }
+            
+            #thermal-receipt, #thermal-receipt * { visibility: visible; }
+            #thermal-receipt {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 58mm; /* Xprinter 58mm Standard */
+                margin: 0;
+                padding: 0;
+                font-family: 'Courier New', Courier, monospace !important;
+                background: white;
+                color: black;
+            }
+            
+            @page {
+                size: 58mm auto;
+                margin: 0mm; /* Reset browser margins */
+            }
+            
+            /* Remove tailwind styling that interferes with pure thermal print */
+            .thermal-text { font-size: 11px; line-height: 1.2; }
+            .thermal-title { font-size: 14px; font-weight: bold; text-align: center; }
+            .thermal-divider { border-bottom: 1px dashed black; margin: 4px 0; }
+        }
     </style>
 </head>
 <body class="bg-noceco-bg text-noceco-text min-h-screen pb-20">
 
-    <header class="bg-white px-6 py-4 border-b border-gray-200 sticky top-0 z-10 shadow-sm flex justify-between items-center">
+    <?php if ($generatedInvoice): 
+        $previous_unpaid = 0;
+        $previous_penalty = 0;
+        $stmtArrears = $pdo->prepare("SELECT amount_due, due_date FROM billing_invoices WHERE account_no = ? AND status = 'Unpaid' AND invoice_no != ?");
+        $stmtArrears->execute([$generatedInvoice['account_no'], $generatedInvoice['invoice_no']]);
+        $arrears = $stmtArrears->fetchAll();
+        $today = strtotime(date('Y-m-d'));
+        foreach ($arrears as $arr) {
+            $previous_unpaid += (float)$arr['amount_due'];
+            if ($today > strtotime($arr['due_date'])) {
+                $previous_penalty += ((float)$arr['amount_due'] * 0.05);
+            }
+        }
+        $absolute_grand_total = $generatedInvoice['grand_total'] + $previous_unpaid + $previous_penalty;
+    ?>
+    <div id="thermal-receipt" class="hidden print:block p-1">
+        <div class="thermal-title">NOCECO</div>
+        <div style="font-size: 9px; text-align: center;">Negros Occidental Electric Coop.</div>
+        <div class="thermal-divider"></div>
+        <div class="thermal-text">
+            INV: #<?php echo $generatedInvoice['invoice_no']; ?><br>
+            DATE: <?php echo date('m/d/Y h:i a'); ?><br>
+            ACC: <?php echo $generatedInvoice['account_no']; ?><br>
+            NAME: <?php echo substr(strtoupper($generatedInvoice['client_name']), 0, 20); ?><br>
+            MTR: <?php echo $generatedInvoice['meter_no']; ?>
+        </div>
+        <div class="thermal-divider"></div>
+        <div class="thermal-text">
+            PERIOD: <?php echo strtoupper($generatedInvoice['billing_month']); ?><br>
+            PREV READ: <?php echo $generatedInvoice['previous_reading']; ?><br>
+            CURR READ: <?php echo $generatedInvoice['current_reading']; ?><br>
+            KWH USED: <?php echo $generatedInvoice['kwh_used']; ?>
+        </div>
+        <div class="thermal-divider"></div>
+        <div class="thermal-text" style="text-align:center;">--- CHARGES ---</div>
+        <table style="width:100%; font-size:9px; border-collapse: collapse;">
+            <?php foreach ($generatedInvoice['line_items'] as $item): ?>
+            <tr>
+                <td style="width:70%; text-align:left;"><?php echo substr($item['desc'], 0, 15); ?></td>
+                <td style="width:30%; text-align:right;"><?php echo number_format($item['amt'], 2); ?></td>
+            </tr>
+            <?php endforeach; ?>
+        </table>
+        <div class="thermal-divider"></div>
+        <div class="thermal-text" style="text-align: right; font-weight: bold; font-size: 13px;">
+            DUE: Php <?php echo number_format($absolute_grand_total, 2); ?>
+        </div>
+        <div class="thermal-text" style="text-align: right;">
+            DUE BY: <?php echo $generatedInvoice['due_date']; ?>
+        </div>
+        <div class="thermal-divider"></div>
+        
+        <div style="display:flex; justify-content:center; margin-top:5px;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=<?php echo urlencode($generatedInvoice['account_no']); ?>" alt="QR" style="width: 100px; height: 100px;">
+        </div>
+        
+        <div style="font-size: 8px; text-align: center; margin-top: 5px;">
+            Late penalty 5% after due date.<br>
+            Reader: <?php echo strtoupper($_SESSION['full_name']); ?>
+        </div>
+        <div style="margin-bottom: 5mm;">.</div> </div>
+    <?php endif; ?>
+
+    <header class="bg-white px-6 py-4 border-b border-gray-200 sticky top-0 z-10 shadow-sm flex justify-between items-center print-hide">
         <div>
             <h1 class="text-xl font-bold tracking-tight">Field Reader</h1>
             <p class="text-xs text-noceco-mustard font-medium"><?php echo htmlspecialchars($_SESSION['full_name']); ?></p>
         </div>
-        <a href="logout.php" class="p-2 rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+        <a href="../logout.php" class="p-2 rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
         </a>
     </header>
 
-   <main class="p-4 max-w-md mx-auto">
-        
+   <main class="p-4 max-w-md mx-auto print-hide">
+       
         <?php if (!empty($message)): ?>
             <div class="mb-4 p-4 rounded-xl text-sm font-medium <?php echo $messageType === 'success' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'; ?> border flex items-center justify-between shadow-sm">
                 <span><?php echo htmlspecialchars($message); ?></span>
@@ -311,28 +391,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         <?php endif; ?>
 
         <?php if ($generatedInvoice): ?>
-            <?php
-                // QUICK BACKEND FETCH: Calculate Previous Unpaid Bills & Penalties
-                $previous_unpaid = 0;
-                $previous_penalty = 0;
-                
-                $stmtArrears = $pdo->prepare("SELECT amount_due, due_date FROM billing_invoices WHERE account_no = ? AND status = 'Unpaid' AND invoice_no != ?");
-                $stmtArrears->execute([$generatedInvoice['account_no'], $generatedInvoice['invoice_no']]);
-                $arrears = $stmtArrears->fetchAll();
-                
-                $today = strtotime(date('Y-m-d'));
-                foreach ($arrears as $arr) {
-                    $previous_unpaid += (float)$arr['amount_due'];
-                    // Apply 5% penalty if the old bill is past its due date
-                    if ($today > strtotime($arr['due_date'])) {
-                        $previous_penalty += ((float)$arr['amount_due'] * 0.05);
-                    }
-                }
-                
-                // Calculate the true grand total including arrears
-                $absolute_grand_total = $generatedInvoice['grand_total'] + $previous_unpaid + $previous_penalty;
-            ?>
-
             <div class="bg-white rounded-[20px] shadow-apple border border-gray-200 overflow-hidden mb-6 font-mono text-sm relative">
                 <div class="absolute top-0 left-0 right-0 h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCI+PHBvbHlnb24gcG9pbnRzPSIwLDEwIDUsMCAxMCwxMCIgZmlsbD0iI2QxZDVkYiIvPjwvc3ZnPg==')] opacity-30"></div>
                 
@@ -356,7 +414,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                     <div class="text-[11px] space-y-1 mb-4 text-gray-700 pb-3 border-b border-dashed border-gray-300">
                         <div class="flex justify-between"><span>Billing Month:</span> <span class="font-bold text-gray-900"><?php echo htmlspecialchars($generatedInvoice['billing_month']); ?></span></div>
                         <div class="flex justify-between"><span>Meter No:</span> <span><?php echo htmlspecialchars($generatedInvoice['meter_no']); ?></span></div>
-                        <div class="flex justify-between"><span>Type:</span> <span><?php echo htmlspecialchars($generatedInvoice['consumer_type']); ?></span></div>
                         <div class="flex justify-between pt-2">
                             <span>Prev Read: <?php echo $generatedInvoice['previous_reading']; ?></span>
                             <span>Curr Read: <?php echo $generatedInvoice['current_reading']; ?></span>
@@ -367,87 +424,17 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                         </div>
                     </div>
 
-                    <div class="max-h-64 overflow-y-auto custom-scrollbar pr-2 mb-4">
-                        <p class="text-[11px] tracking-[0.2em] mb-2 font-bold text-center">C H A R G E S</p>
-                        <div class="flex justify-between text-[10px] font-bold border-b border-gray-300 pb-1 mb-2 uppercase text-gray-500">
-                            <span class="w-1/2">Description</span><span class="w-1/4 text-center">Rate</span><span class="w-1/4 text-right">Amount</span>
-                        </div>
-                        
-                        <div class="space-y-1">
-                            <?php 
-                            $vatItems = [];
-                            foreach ($generatedInvoice['line_items'] as $item): 
-                                if ($item['is_vat_item']) { $vatItems[] = $item; continue; }
-                                $rateSuffix = $item['type'] === 'Per_KWH' ? '/kwh' : ($item['type'] === 'Per_Customer' ? '/Cust' : '');
-                                $shortDesc = strlen($item['desc']) > 16 ? substr($item['desc'], 0, 14) . '..' : $item['desc'];
-                            ?>
-                            <div class="flex justify-between text-[11px] leading-tight">
-                                <span class="w-1/2 truncate pr-1"><?php echo htmlspecialchars($shortDesc); ?></span>
-                                <span class="w-1/4 text-center text-gray-500"><?php echo number_format($item['rate'], 4) . $rateSuffix; ?></span>
-                                <span class="w-1/4 text-right"><?php echo number_format($item['amt'], 2); ?></span>
-                            </div>
-                            <?php endforeach; ?>
-                        </div>
-
-                        <?php if (!empty($vatItems)): ?>
-                            <p class="text-[11px] mb-2 mt-4 font-bold border-t border-dashed border-gray-300 pt-2">Vat Detail:</p>
-                            <div class="space-y-1 text-gray-600 pl-1">
-                                <?php foreach ($vatItems as $item): 
-                                    $rateSuffix = $item['type'] === 'Per_KWH' ? '/kwh' : '';
-                                ?>
-                                <div class="flex justify-between text-[11px] leading-tight">
-                                    <span class="w-1/2 truncate pr-1"><?php echo htmlspecialchars($item['desc']); ?></span>
-                                    <span class="w-1/4 text-left">x <?php echo number_format($item['rate'], 4) . $rateSuffix; ?></span>
-                                    <span class="w-1/4 text-right"><?php echo number_format($item['amt'], 2); ?></span>
-                                </div>
-                                <?php endforeach; ?>
-                            </div>
-                        <?php endif; ?>
+                    <div class="flex flex-col items-center justify-center my-4 border-b border-dashed border-gray-300 pb-4">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?php echo urlencode($generatedInvoice['account_no']); ?>" alt="QR" class="w-24 h-24 shadow-sm rounded-lg mb-3">
+                        <button onclick="window.print()" class="bg-noceco-mustard text-white px-6 py-2 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-yellow-600 transition-colors shadow-sm">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                            Print Receipt (Thermal)
+                        </button>
                     </div>
 
-                    <div class="pt-3 border-t-2 border-dashed border-gray-400">
-                        <div class="flex justify-between text-[11px] mb-1"><span class="text-gray-600">VATable Sales</span><span><?php echo number_format($generatedInvoice['vatable_sales'], 2); ?></span></div>
-                        <div class="flex justify-between text-[11px] mb-1"><span class="text-gray-600">VAT-Exempt Sales</span><span><?php echo number_format($generatedInvoice['exempt_sales'], 2); ?></span></div>
-                        <div class="flex justify-between text-[11px] font-bold mb-3"><span>TOTAL VAT (12%)</span><span><?php echo number_format($generatedInvoice['explicit_vat_total'], 2); ?></span></div>
-                        
-                        <div class="flex justify-between text-[11px] font-bold text-gray-900 border-t border-gray-300 pt-2 mb-2">
-                            <span>CURRENT BILL AMOUNT</span>
-                            <span>Php <?php echo number_format($generatedInvoice['grand_total'], 2); ?></span>
-                        </div>
-
-                        <?php if ($previous_unpaid > 0): ?>
-                            <div class="bg-red-50 p-2 mb-2 rounded border border-red-100">
-                                <div class="flex justify-between text-[11px] font-bold text-red-600 mb-1">
-                                    <span>PREVIOUS UNPAID</span>
-                                    <span><?php echo number_format($previous_unpaid, 2); ?></span>
-                                </div>
-                                <?php if ($previous_penalty > 0): ?>
-                                    <div class="flex justify-between text-[10px] text-red-500 pl-2">
-                                        <span>+ Arrears Penalty (5%)</span>
-                                        <span><?php echo number_format($previous_penalty, 2); ?></span>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endif; ?>
-
-                        <div class="flex justify-between font-bold text-lg pt-2 border-t border-gray-800 text-gray-900">
-                            <span>TOTAL DUE</span>
-                            <span>Php <?php echo number_format($absolute_grand_total, 2); ?></span>
-                        </div>
-                        
-                        <div class="flex justify-between text-[11px] text-red-600 font-bold mt-1">
-                            <span>DUE DATE</span>
-                            <span><?php echo htmlspecialchars($generatedInvoice['due_date']); ?></span>
-                        </div>
-
-                        <div class="text-center mt-4 border border-gray-200 bg-gray-50 p-2 rounded">
-                            <p class="text-[9px] text-gray-800 font-bold leading-tight mb-1">LATE PAYMENT NOTICE</p>
-                            <p class="text-[8px] text-gray-600 leading-tight">
-                                A 5% penalty (Php <?php echo number_format($generatedInvoice['grand_total'] * 0.05, 2); ?>) will be added to your CURRENT BILL if paid after <?php echo htmlspecialchars($generatedInvoice['due_date']); ?>.
-                            </p>
-                        </div>
-
-                        <p class="text-[9px] text-center text-gray-400 mt-4 pt-4 border-t border-gray-100">Reader: <?php echo strtoupper(htmlspecialchars($_SESSION['full_name'])); ?></p>
+                    <div class="flex justify-between font-bold text-lg pt-2 border-t border-gray-800 text-gray-900">
+                        <span>TOTAL DUE</span>
+                        <span>Php <?php echo number_format($absolute_grand_total ?? $generatedInvoice['grand_total'], 2); ?></span>
                     </div>
                 </div>
             </div>
@@ -457,17 +444,33 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             </a>
 
         <?php elseif (!$clientData): ?>
+            
+            <div id="scanner-container" class="hidden mb-6 bg-gray-900 rounded-2xl overflow-hidden shadow-2xl relative">
+                <div class="p-3 bg-black flex justify-between items-center text-white">
+                    <span class="text-xs font-bold uppercase tracking-widest">QR Code Scanner</span>
+                    <button type="button" onclick="stopScanner()" class="text-red-500 font-bold text-sm">Close</button>
+                </div>
+                <div id="reader" width="100%"></div>
+            </div>
+
             <div class="bg-white rounded-[24px] p-6 md:p-8 shadow-apple border border-gray-100 mt-2">
-                <h2 class="text-xl font-bold mb-2 text-gray-900">Find Meter Record</h2>
-                <p class="text-sm text-gray-500 mb-6">Enter Account No. or Meter No.</p>
+                <div class="flex justify-between items-center mb-6">
+                    <div>
+                        <h2 class="text-xl font-bold text-gray-900">Find Record</h2>
+                        <p class="text-sm text-gray-500">Enter Account or Meter No.</p>
+                    </div>
+                    <button type="button" onclick="startScanner()" class="w-12 h-12 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full flex items-center justify-center transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                </div>
                 
-                <form action="readerman.php" method="GET" onsubmit="showLoading()">
+                <form id="searchForm" action="readerman.php" method="GET" onsubmit="showLoading()">
                     <div class="flex flex-col gap-3">
                         <input type="text" name="search_account" id="search_account" required autocomplete="off"
                             class="w-full text-2xl font-bold px-5 py-4 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-noceco-mustard transition-all tracking-wide text-gray-900 placeholder-gray-300"
                             placeholder="e.g., 26-328-66378" autofocus>
                         
-                        <button type="submit" id="searchBtn" class="w-full bg-noceco-mustard hover:bg-noceco-mustardHover text-white py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center shadow-[0_4px_14px_rgba(219,161,17,0.3)]">
+                        <button type="submit" id="searchBtn" class="w-full bg-noceco-mustard hover:bg-noceco-mustardHover text-white py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center shadow-md">
                             <span id="btnText">Search Record</span>
                             <svg id="btnSpinner" class="animate-spin h-5 w-5 hidden ml-2 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                         </button>
@@ -475,14 +478,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                 </form>
             </div>
 
-            <!-- NEW FEATURE: Disconnected Clients Button -->
             <a href="disconnected.php" class="mt-4 w-full bg-white hover:bg-gray-50 text-gray-700 py-4 rounded-2xl font-bold text-base transition-all flex items-center justify-center shadow-apple border border-gray-200">
-                <svg class="w-5 h-5 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
-                </svg>
+                <svg class="w-5 h-5 mr-2 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
                 View Disconnected Clients
             </a>
-            <!-- END NEW FEATURE -->
 
         <?php else: ?>
             <div class="bg-white rounded-t-[20px] p-5 border-b border-gray-100 shadow-apple mt-2">
@@ -500,7 +499,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                     <input type="hidden" name="account_no" value="<?php echo htmlspecialchars($clientData['account_no']); ?>">
                     <input type="hidden" name="contact_number" value="<?php echo htmlspecialchars($clientData['contact_number']); ?>">
                     <input type="hidden" name="previous_reading" value="<?php echo $previousReading; ?>">
-                    
                     <input type="hidden" name="fname" value="<?php echo htmlspecialchars($clientData['first_name']); ?>">
                     <input type="hidden" name="lname" value="<?php echo htmlspecialchars($clientData['last_name']); ?>">
                     <input type="hidden" name="address" value="<?php echo htmlspecialchars($clientData['address']); ?>">
@@ -530,30 +528,56 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     </main>
 
     <script>
-        // UX: Show loading spinner on search
+        // UX Loaders
         function showLoading() {
-            const btn = document.getElementById('searchBtn');
-            const text = document.getElementById('btnText');
-            const spinner = document.getElementById('btnSpinner');
-            
-            if(btn && text && spinner) {
-                text.textContent = 'Searching...';
-                spinner.classList.remove('hidden');
-                btn.classList.add('opacity-80', 'cursor-not-allowed');
-            }
+            document.getElementById('btnText').textContent = 'Searching...';
+            document.getElementById('btnSpinner').classList.remove('hidden');
+            document.getElementById('searchBtn').classList.add('opacity-80', 'cursor-not-allowed');
+        }
+        function showSubmitLoading() {
+            document.getElementById('generateText').textContent = 'Processing...';
+            document.getElementById('generateSpinner').classList.remove('hidden');
+            document.getElementById('generateBtn').classList.add('opacity-80', 'cursor-not-allowed');
         }
 
-        // UX: Show loading spinner on form submit
-        function showSubmitLoading() {
-            const btn = document.getElementById('generateBtn');
-            const text = document.getElementById('generateText');
-            const spinner = document.getElementById('generateSpinner');
+        // ==========================================
+        // HTML5 QR CODE SCANNER LOGIC
+        // ==========================================
+        let html5QrcodeScanner = null;
+
+        function startScanner() {
+            document.getElementById('scanner-container').classList.remove('hidden');
             
-            if(btn && text && spinner) {
-                text.textContent = 'Processing...';
-                spinner.classList.remove('hidden');
-                btn.classList.add('opacity-80', 'cursor-not-allowed');
+            // Initialize the scanner targeting the 'reader' div
+            html5QrcodeScanner = new Html5QrcodeScanner(
+                "reader", 
+                { fps: 10, qrbox: {width: 250, height: 250}, aspectRatio: 1.0 }, 
+                /* verbose= */ false
+            );
+            
+            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+        }
+
+        function stopScanner() {
+            if(html5QrcodeScanner) {
+                html5QrcodeScanner.clear();
             }
+            document.getElementById('scanner-container').classList.add('hidden');
+        }
+
+        function onScanSuccess(decodedText, decodedResult) {
+            // Stop scanning to prevent multiple hits
+            stopScanner();
+            
+            // Fill the search input with the QR code text (Account No)
+            document.getElementById('search_account').value = decodedText;
+            
+            // Auto-submit the form
+            document.getElementById('searchForm').submit();
+        }
+
+        function onScanFailure(error) {
+            // Silently handle scan failures (happens every frame until QR is detected)
         }
     </script>
 </body>

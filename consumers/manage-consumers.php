@@ -72,22 +72,63 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
     }
 
-    // ACTION: EDIT CONSUMER
-    if ($action === 'edit') {
-        $account_no = $_POST['account_no'];
-        $contact_number = trim($_POST['contact_number']);
-        $consumer_type = $_POST['consumer_type'];
+        // ACTION: EDIT CONSUMER
+        if ($action === 'edit') {
 
-        try {
-            $stmt = $pdo->prepare("UPDATE clients SET contact_number = ?, consumer_type = ? WHERE account_no = ?");
-            $stmt->execute([$contact_number, $consumer_type, $account_no]);
-            $message = "Account $account_no successfully updated.";
-            $messageType = "success";
-        } catch (PDOException $e) {
-            $message = "Update failed: " . $e->getMessage();
-            $messageType = "error";
+            $account_no     = $_POST['account_no'];
+            $contact_number = trim($_POST['contact_number']);
+            $consumer_type  = $_POST['consumer_type'];
+            $new_password   = trim($_POST['password']);
+
+            try {
+
+                // IF PASSWORD FIELD IS FILLED
+                if (!empty($new_password)) {
+
+                    // HASH PASSWORD
+                    $hashedPassword = password_hash($new_password, PASSWORD_DEFAULT);
+
+                    $stmt = $pdo->prepare("
+                        UPDATE clients 
+                        SET contact_number = ?, 
+                            consumer_type = ?, 
+                            password = ?
+                        WHERE account_no = ?
+                    ");
+
+                    $stmt->execute([
+                        $contact_number,
+                        $consumer_type,
+                        $hashedPassword,
+                        $account_no
+                    ]);
+
+                } else {
+
+                    // UPDATE WITHOUT CHANGING PASSWORD
+                    $stmt = $pdo->prepare("
+                        UPDATE clients 
+                        SET contact_number = ?, 
+                            consumer_type = ?
+                        WHERE account_no = ?
+                    ");
+
+                    $stmt->execute([
+                        $contact_number,
+                        $consumer_type,
+                        $account_no
+                    ]);
+                }
+
+                $message = "Account $account_no successfully updated.";
+                $messageType = "success";
+
+            } catch (PDOException $e) {
+
+                $message = "Update failed: " . $e->getMessage();
+                $messageType = "error";
+            }
         }
-    }
 }
 
 // ---------------------------------------------------------------------
@@ -332,39 +373,161 @@ try {
     </div>
 
     <div id="editModal" class="fixed inset-0 bg-gray-900/40 backdrop-blur-sm hidden z-50 flex items-center justify-center p-4 transition-opacity">
-        <div class="bg-white rounded-[24px] shadow-2xl w-full max-w-md overflow-hidden">
-            <div class="p-6 border-b border-gray-100 flex justify-between items-center">
-                <h3 class="text-lg font-bold text-gray-900">Edit Consumer Details</h3>
-                <button onclick="closeModal('editModal')" class="p-2 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors">
-                    <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            <form action="manage-consumers.php" method="POST" class="p-6 space-y-4">
-                <input type="hidden" name="action" value="edit">
-                <input type="hidden" name="account_no" id="edit_account_no">
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Contact Number</label>
-                    <input type="text" name="contact_number" id="edit_contact" required
-                        class="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-noceco-mustard focus:bg-white transition-all">
-                </div>
 
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Consumer Type</label>
-                    <select name="consumer_type" id="edit_type" required
-                        class="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-noceco-mustard focus:bg-white transition-all appearance-none">
-                        <option value="RESIDENTIAL">Residential</option>
-                        <option value="COMMERCIAL">Commercial</option>
-                        <option value="INDUSTRIAL">Industrial</option>
-                    </select>
-                </div>
+    <div class="bg-white rounded-[24px] shadow-2xl w-full max-w-md overflow-hidden">
 
-                <button type="submit" class="w-full mt-2 bg-noceco-mustard hover:bg-noceco-mustardHover text-white font-semibold py-3 px-4 rounded-xl transition-all shadow-[0_4px_14px_rgba(219,161,17,0.3)]">
-                    Save Changes
-                </button>
-            </form>
+        <!-- HEADER -->
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+
+            <h3 class="text-lg font-bold text-gray-900">
+                Edit Consumer Details
+            </h3>
+
+            <button onclick="closeModal('editModal')"
+                class="p-2 bg-gray-100 hover:bg-gray-200 rounded-full transition-colors">
+
+                <svg class="w-5 h-5 text-gray-600"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24">
+
+                    <path stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M6 18L18 6M6 6l12 12">
+                    </path>
+
+                </svg>
+            </button>
+
         </div>
+
+        <!-- FORM -->
+        <form action="manage-consumers.php" method="POST" class="p-6 space-y-4">
+
+            <input type="hidden" name="action" value="edit">
+            <input type="hidden" name="account_no" id="edit_account_no">
+
+            <!-- CONTACT NUMBER -->
+            <div>
+
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Contact Number
+                </label>
+
+                <input type="text"
+                    name="contact_number"
+                    id="edit_contact"
+                    required
+                    class="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-noceco-mustard focus:bg-white transition-all">
+
+            </div>
+
+            <!-- CONSUMER TYPE -->
+            <div>
+
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Consumer Type
+                </label>
+
+                <select name="consumer_type"
+                    id="edit_type"
+                    required
+                    class="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-noceco-mustard focus:bg-white transition-all appearance-none">
+
+                    <option value="RESIDENTIAL">Residential</option>
+                    <option value="COMMERCIAL">Commercial</option>
+                    <option value="INDUSTRIAL">Industrial</option>
+
+                </select>
+
+            </div>
+
+            <!-- PASSWORD -->
+            <div>
+
+                <label class="block text-sm font-medium text-gray-700 mb-1">
+                    New Password
+                </label>
+
+                <div class="relative">
+
+                    <input type="password"
+                        name="password"
+                        id="edit_password"
+                        placeholder="Leave blank to keep current password"
+                        class="w-full px-4 py-3 pr-12 rounded-xl bg-gray-50 border border-gray-200 focus:ring-2 focus:ring-noceco-mustard focus:bg-white transition-all">
+
+                    <!-- SHOW / HIDE PASSWORD -->
+                    <button type="button"
+                        onclick="togglePassword()"
+                        class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700">
+
+                        <svg class="w-5 h-5"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24">
+
+                            <path stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M15 12a3 3 0 11-6 0 3 3 0 016 0">
+                            </path>
+
+                            <path stroke-linecap="round"
+                                stroke-linejoin="round"
+                                stroke-width="2"
+                                d="M2.458 12C3.732 7.943 7.523 5 12 5
+                                c4.478 0 8.268 2.943 9.542 7
+                                -1.274 4.057-5.064 7-9.542 7
+                                -4.477 0-8.268-2.943-9.542-7z">
+                            </path>
+
+                        </svg>
+
+                    </button>
+
+                </div>
+
+                <p class="text-xs text-gray-400 mt-1">
+                    Leave blank if you don't want to change the password.
+                </p>
+
+            </div>
+
+            <!-- SUBMIT BUTTON -->
+            <button type="submit"
+                class="w-full mt-2 bg-noceco-mustard hover:bg-noceco-mustardHover text-white font-semibold py-3 px-4 rounded-xl transition-all shadow-[0_4px_14px_rgba(219,161,17,0.3)]">
+
+                Save Changes
+
+            </button>
+
+        </form>
+
     </div>
+
+</div>
+
+<!-- PASSWORD TOGGLE SCRIPT -->
+<script>
+
+    function togglePassword() {
+
+        const passwordInput = document.getElementById('edit_password');
+
+        if (passwordInput.type === 'password') {
+
+            passwordInput.type = 'text';
+
+        } else {
+
+            passwordInput.type = 'password';
+
+        }
+    }
+
+</script>
 
     <script>
         function closeModal(modalId) {

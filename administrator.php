@@ -1,8 +1,5 @@
 <?php
-// Start the session at the very top
 session_start();
-
-// Include database connection (Root level path)
 require_once 'db/dbcon.php';
 
 // ---------------------------------------------------------------------
@@ -17,10 +14,8 @@ if (isset($_SESSION['lockout_time']) && time() < $_SESSION['lockout_time']) {
     $is_locked = true;
 } else {
     $is_locked = false;
-    // Reset attempts if lockout time has passed
     if (isset($_SESSION['lockout_time']) && time() >= $_SESSION['lockout_time']) {
-        unset($_SESSION['login_attempts']);
-        unset($_SESSION['lockout_time']);
+        unset($_SESSION['login_attempts'], $_SESSION['lockout_time']);
     }
 }
 
@@ -28,9 +23,10 @@ if (isset($_SESSION['lockout_time']) && time() < $_SESSION['lockout_time']) {
 // REDIRECT IF ALREADY LOGGED IN
 // ---------------------------------------------------------------------
 if (isset($_SESSION['staff_id']) && isset($_SESSION['role'])) {
-    if ($_SESSION['role'] === 'Main Administrator') header("Location: admin-dashboard.php");
-    elseif ($_SESSION['role'] === 'Cashier') header("Location: cashier.php");
-    elseif ($_SESSION['role'] === 'Meter Reader') header("Location: readerman.php");
+    if ($_SESSION['role'] === 'Main Administrator') header("Location: admin/admin-dashboard.php");
+    elseif ($_SESSION['role'] === 'Cashier') header("Location: admin/cashier.php");
+    elseif ($_SESSION['role'] === 'Meter Reader') header("Location: readerman/readerman.php");
+    elseif ($_SESSION['role'] === 'Staff') header("Location: staff/home.php");
     exit();
 }
 
@@ -38,10 +34,7 @@ if (isset($_SESSION['staff_id']) && isset($_SESSION['role'])) {
 // LOGIN PROCESSING
 // ---------------------------------------------------------------------
 if ($_SERVER["REQUEST_METHOD"] == "POST" && !$is_locked) {
-    // Initialize attempts
-    if (!isset($_SESSION['login_attempts'])) {
-        $_SESSION['login_attempts'] = 0;
-    }
+    if (!isset($_SESSION['login_attempts'])) $_SESSION['login_attempts'] = 0;
 
     $username = trim($_POST['username']);
     $password = $_POST['password'];
@@ -50,44 +43,32 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$is_locked) {
         $error_msg = "Please enter both username and password.";
     } else {
         try {
-            // Fetch user by username securely
             $stmt = $pdo->prepare("SELECT staff_id, password_hash, full_name, role, status FROM system_staff WHERE username = ?");
             $stmt->execute([$username]);
             $user = $stmt->fetch();
 
-            // Verify User exists, Status is Active, and Password matches
             if ($user && $user['status'] === 'Active' && password_verify($password, $user['password_hash'])) {
-                
-                // SECURITY: Prevent Session Fixation
                 session_regenerate_id(true);
 
-                // Set secure session variables
                 $_SESSION['staff_id'] = $user['staff_id'];
                 $_SESSION['username'] = $username;
                 $_SESSION['full_name'] = $user['full_name'];
                 $_SESSION['role'] = $user['role'];
 
-                // Reset Brute Force counter on success
-                unset($_SESSION['login_attempts']);
-                unset($_SESSION['lockout_time']);
+                unset($_SESSION['login_attempts'], $_SESSION['lockout_time']);
 
                 // Route to respective dashboards
-                if ($user['role'] === 'Main Administrator') {
-                    header("Location: admin/admin-dashboard.php");
-                } elseif ($user['role'] === 'Cashier') {
-                    header("Location: cashier/cashier.php");
-                } elseif ($user['role'] === 'Meter Reader') {
-                    header("Location: readerman/readerman.php");
-                }
+                if ($user['role'] === 'Main Administrator') header("Location: admin/admin-dashboard.php");
+                elseif ($user['role'] === 'Cashier') header("Location: admin/cashier.php");
+                elseif ($user['role'] === 'Meter Reader') header("Location: readerman/dashboard.php");
+                elseif ($user['role'] === 'Staff') header("Location: staff/home.php");
                 exit();
 
             } else {
-                // Invalid login
                 $_SESSION['login_attempts']++;
-                
                 if ($_SESSION['login_attempts'] >= $max_attempts) {
                     $_SESSION['lockout_time'] = time() + $lockout_time;
-                    $error_msg = "Too many failed attempts. You have been locked out for 15 minutes.";
+                    $error_msg = "Too many failed attempts. You are locked out for 15 minutes.";
                     $is_locked = true;
                 } else {
                     $attempts_left = $max_attempts - $_SESSION['login_attempts'];
@@ -95,7 +76,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && !$is_locked) {
                 }
             }
         } catch (PDOException $e) {
-            // In production, log this error securely instead of showing it
+            error_log($e->getMessage());
             $error_msg = "System Error. Please contact IT support."; 
         }
     }

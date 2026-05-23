@@ -37,7 +37,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $messageType = "error";
             } else {
                 $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-                $sql = "INSERT INTO system_staff (full_name, username, password_hash, role) VALUES (?, ?, ?, ?)";
+                $sql = "INSERT INTO system_staff (full_name, username, password_hash, role, status, created_at) VALUES (?, ?, ?, ?, 'Active', NOW())";
                 $stmt = $pdo->prepare($sql);
                 
                 if ($stmt->execute([$fullName, $username, $hashedPassword, $role])) {
@@ -101,7 +101,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"></path></svg>
                     Dashboard
                 </a>
-                <a href="#" class="flex items-center px-4 py-3 text-gray-500 hover:bg-gray-50 hover:text-gray-900 rounded-xl transition-colors">
+                <a href="register-admin.php" class="flex items-center px-4 py-3 bg-noceco-bg/80 text-noceco-mustard font-bold rounded-xl shadow-sm">
+                    <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"></path></svg>
+                    Register Staff
+                </a>
+                <a href="../consumers/manage-consumers.php" class="flex items-center px-4 py-3 text-gray-500 hover:bg-gray-50 hover:text-gray-900 rounded-xl transition-colors">
                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                     Manage Consumers
                 </a>
@@ -109,7 +113,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
                     Billing Rates
                 </a>
-                <a href="#" class="flex items-center px-4 py-3 text-gray-500 hover:bg-gray-50 hover:text-gray-900 rounded-xl transition-colors">
+                <a href="report.php" class="flex items-center px-4 py-3 text-gray-500 hover:bg-gray-50 hover:text-gray-900 rounded-xl transition-colors">
                     <svg class="w-5 h-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                     Reports
                 </a>
@@ -157,7 +161,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 </div>
 
                 <?php if (!empty($message)): ?>
-                    <div class="mb-6 p-4 rounded-xl text-sm font-medium <?php echo $messageType === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'; ?>">
+                    <div class="mb-6 p-4 rounded-xl text-sm font-medium <?php echo $messageType === 'success' ? 'bg-green-50 text-green-700 border border-green-100' : 'bg-red-50 text-red-700 border border-red-100'; ?>">
                         <?php echo htmlspecialchars($message); ?>
                     </div>
                 <?php endif; ?>
@@ -200,11 +204,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     <div>
                         <label for="role" class="block text-sm font-medium text-gray-700 mb-1.5">System Role</label>
                         <select name="role" id="role" required
-                            class="w-full px-4 py-3 rounded-xl bg-noceco-bg/50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-noceco-mustard focus:bg-white transition-all duration-200 appearance-none">
+                            class="w-full px-4 py-3 rounded-xl bg-noceco-bg/50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-noceco-mustard focus:bg-white transition-all duration-200 appearance-none font-semibold">
                             <option value="" disabled selected>Select access level</option>
                             <option value="Main Administrator">Main Administrator</option>
                             <option value="Cashier">Cashier</option>
                             <option value="Meter Reader">Meter Reader</option>
+                            <option value="Staff">Staff (Customer Service)</option>
                         </select>
                     </div>
 

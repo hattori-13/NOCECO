@@ -408,9 +408,9 @@ foreach ($todaysPayments as $tp) {
                 <div class="bg-white rounded-[20px] p-6 shadow-apple border border-gray-100">
                     <form action="cashier.php" method="GET" class="relative flex items-center">
                         <svg class="w-6 h-6 text-gray-400 absolute left-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-                        <input type="text" name="search_query" required value="<?php echo isset($_GET['search_query']) ? htmlspecialchars($_GET['search_query']) : ''; ?>"
+                        <input type="text" name="search_query" id="mainSearchInput" autocomplete="off" required value="<?php echo isset($_GET['search_query']) ? htmlspecialchars($_GET['search_query']) : ''; ?>"
                             class="w-full pl-14 pr-32 py-4 bg-noceco-bg/50 border border-gray-200 rounded-xl text-lg focus:outline-none focus:ring-2 focus:ring-noceco-mustard focus:bg-white transition-all"
-                            placeholder="Search Account No. or Last Name to pay bill..." autofocus>
+                            placeholder="Scan QR Code or Type Account No..." autofocus>
                         <button type="submit" class="absolute right-2 top-2 bottom-2 bg-gray-900 hover:bg-black text-white font-medium px-6 rounded-lg transition-colors">Find Bill</button>
                     </form>
                 </div>
@@ -791,6 +791,32 @@ foreach ($todaysPayments as $tp) {
                 scales: { y: { display: false }, x: { grid: { display: false }, ticks: { font: { size: 10 } } } }
             }
         });
+
+
+        // --- QR SCANNER OPTIMIZATION ---
+            const mainSearchInput = document.getElementById('mainSearchInput');
+
+            if (mainSearchInput) {
+                // 1. Force focus on load
+                mainSearchInput.focus();
+
+                // 2. If cashier types anywhere on the screen, automatically redirect the typing to the search bar
+                document.addEventListener('keydown', function(e) {
+                    const activeTag = document.activeElement.tagName;
+                    // Don't interfere if they are typing in another input (like the table filter)
+                    if (activeTag !== 'INPUT' && activeTag !== 'TEXTAREA') {
+                        mainSearchInput.focus();
+                    }
+                });
+
+                // 3. Optional: Refocus when clicking empty space (so the scanner is always ready)
+                document.addEventListener('click', function(e) {
+                    const activeTag = e.target.tagName;
+                    if (activeTag !== 'INPUT' && activeTag !== 'BUTTON' && activeTag !== 'A') {
+                        mainSearchInput.focus();
+                    }
+                });
+            }
     </script>
 </body>
 </html>

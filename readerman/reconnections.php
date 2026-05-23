@@ -116,7 +116,7 @@ try {
             </nav>
         </div>
         <div class="p-4 border-t border-gray-100">
-            <a href="../logout.php" class="flex items-center px-4 py-3 text-red-500 hover:bg-red-50 rounded-xl transition-colors font-medium">Logout</a>
+            <a href="logout.php" class="flex items-center px-4 py-3 text-red-500 hover:bg-red-50 rounded-xl transition-colors font-medium">Logout</a>
         </div>
     </aside>
 

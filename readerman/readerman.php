@@ -220,7 +220,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
 
             $smsMessage = "NOCECO Alert: Your bill for $billing_month is Php " . number_format($grand_total, 2) . ". Due date is $due_date. KWH Used: $kwh_used.";
             $stmtSMS = $pdo->prepare("INSERT INTO sms_logs (account_no, contact_number, message_type, message_content) VALUES (?, ?, 'New Bill', ?)");
-            $stmtSMS->execute([$account_no, $contact_number, $smsMessage]);
+            $stmtSMS->execute([$account_no, $contact_number, 'New Bill', $smsMessage]);
 
             $pdo->commit();
             
@@ -362,7 +362,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         <div class="thermal-divider"></div>
         
         <div style="display:flex; justify-content:center; margin-top:5px;">
-            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=<?php echo urlencode($generatedInvoice['account_no']); ?>" alt="QR" style="width: 100px; height: 100px;">
+            <img src="https://barcode.tec-it.com/barcode.ashx?data=<?php echo urlencode($generatedInvoice['account_no']); ?>&code=Code128" alt="Barcode" style="width: 100%; max-width: 180px; height: 40px; object-fit: contain;">
         </div>
         
         <div style="font-size: 8px; text-align: center; margin-top: 5px;">
@@ -377,7 +377,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             <h1 class="text-xl font-bold tracking-tight">Field Reader</h1>
             <p class="text-xs text-noceco-mustard font-medium"><?php echo htmlspecialchars($_SESSION['full_name']); ?></p>
         </div>
-        <a href="../logout.php" class="p-2 rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
+        <a href="logout.php" class="p-2 rounded-full bg-red-50 text-red-500 hover:bg-red-100 transition-colors">
             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
         </a>
     </header>
@@ -425,7 +425,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                     </div>
 
                     <div class="flex flex-col items-center justify-center my-4 border-b border-dashed border-gray-300 pb-4">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?php echo urlencode($generatedInvoice['account_no']); ?>" alt="QR" class="w-24 h-24 shadow-sm rounded-lg mb-3">
+                        <img src="https://barcode.tec-it.com/barcode.ashx?data=<?php echo urlencode($generatedInvoice['account_no']); ?>&code=Code128" alt="Barcode" class="w-48 h-16 shadow-sm mb-3 object-contain bg-white p-1">
                         <button onclick="window.print()" class="bg-noceco-mustard text-white px-6 py-2 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-yellow-600 transition-colors shadow-sm">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
                             Print Receipt (Thermal)
@@ -447,7 +447,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             
             <div id="scanner-container" class="hidden mb-6 bg-gray-900 rounded-2xl overflow-hidden shadow-2xl relative">
                 <div class="p-3 bg-black flex justify-between items-center text-white">
-                    <span class="text-xs font-bold uppercase tracking-widest">QR Code Scanner</span>
+                    <span class="text-xs font-bold uppercase tracking-widest">Barcode Scanner</span>
                     <button type="button" onclick="stopScanner()" class="text-red-500 font-bold text-sm">Close</button>
                 </div>
                 <div id="reader" width="100%"></div>
@@ -541,7 +541,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         }
 
         // ==========================================
-        // HTML5 QR CODE SCANNER LOGIC
+        // HTML5 BARCODE/QR SCANNER LOGIC
         // ==========================================
         let html5QrcodeScanner = null;
 
@@ -549,9 +549,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             document.getElementById('scanner-container').classList.remove('hidden');
             
             // Initialize the scanner targeting the 'reader' div
+            // Changed the box shape to be a rectangle to better fit 1D Barcodes
             html5QrcodeScanner = new Html5QrcodeScanner(
                 "reader", 
-                { fps: 10, qrbox: {width: 250, height: 250}, aspectRatio: 1.0 }, 
+                { fps: 10, qrbox: {width: 300, height: 150}, aspectRatio: 2.0 }, 
                 /* verbose= */ false
             );
             
@@ -569,7 +570,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             // Stop scanning to prevent multiple hits
             stopScanner();
             
-            // Fill the search input with the QR code text (Account No)
+            // Fill the search input with the Barcode text (Account No)
             document.getElementById('search_account').value = decodedText;
             
             // Auto-submit the form
@@ -577,7 +578,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         }
 
         function onScanFailure(error) {
-            // Silently handle scan failures (happens every frame until QR is detected)
+            // Silently handle scan failures (happens every frame until Barcode is detected)
         }
     </script>
 </body>

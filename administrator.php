@@ -24,7 +24,7 @@ if (isset($_SESSION['lockout_time']) && time() < $_SESSION['lockout_time']) {
 // ---------------------------------------------------------------------
 if (isset($_SESSION['staff_id']) && isset($_SESSION['role'])) {
     if ($_SESSION['role'] === 'Main Administrator') header("Location: admin/admin-dashboard.php");
-    elseif ($_SESSION['role'] === 'Cashier') header("Location: admin/cashier.php");
+    elseif ($_SESSION['role'] === 'Cashier') header("Location: cashier/cashier.php");
     elseif ($_SESSION['role'] === 'Meter Reader') header("Location: readerman/readerman.php");
     elseif ($_SESSION['role'] === 'Staff') header("Location: staff/home.php");
     exit();

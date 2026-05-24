@@ -10,6 +10,65 @@ session_start();
 require_once '../db/dbcon.php';
 
 // ---------------------------------------------------------------------
+// FLASH MESSAGE HANDLER
+// ---------------------------------------------------------------------
+$message = $_SESSION['msg'] ?? '';
+$messageType = $_SESSION['msg_type'] ?? '';
+unset($_SESSION['msg'], $_SESSION['msg_type']);
+
+// ---------------------------------------------------------------------
+// ACTION: UPLOAD PAYMENT PROOF
+// ---------------------------------------------------------------------
+if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['action'] === 'upload_payment') {
+    $ref_no = trim($_POST['reference_number']);
+    $acc_no = $_SESSION['client_account'];
+    $c_name = $_SESSION['client_name'];
+    
+    // Check if file was uploaded without errors
+    if (isset($_FILES['payment_image']) && $_FILES['payment_image']['error'] == 0) {
+        $allowedExts = ['jpg', 'jpeg', 'png', 'pdf'];
+        $filename = $_FILES['payment_image']['name'];
+        $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+        
+        if (in_array($ext, $allowedExts)) {
+            // Generate unique filename to prevent overwriting
+            $newName = time() . '_' . str_replace('-', '', $acc_no) . '.' . $ext;
+            
+            // Ensure uploads directory exists (Root level)
+            $uploadDir = '../uploads/';
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0777, true);
+            }
+            
+            $targetPath = $uploadDir . $newName;
+            
+            if (move_uploaded_file($_FILES['payment_image']['tmp_name'], $targetPath)) {
+                // Save to Database
+                $savePath = 'uploads/' . $newName; // Relative path for DB
+                $stmt = $pdo->prepare("INSERT INTO payment_proofs (account_no, client_name, reference_number, image_url, status, upload_date) VALUES (?, ?, ?, ?, 'Pending', NOW())");
+                $stmt->execute([$acc_no, $c_name, $ref_no, $savePath]);
+                
+                $_SESSION['msg'] = "Success! Payment proof uploaded. Please wait for cashier verification.";
+                $_SESSION['msg_type'] = "success";
+            } else {
+                $_SESSION['msg'] = "Error: Failed to save the uploaded image to the server.";
+                $_SESSION['msg_type'] = "error";
+            }
+        } else {
+            $_SESSION['msg'] = "Error: Invalid file type. Only JPG, PNG, and PDF are allowed.";
+            $_SESSION['msg_type'] = "error";
+        }
+    } else {
+        $_SESSION['msg'] = "Error: Please select a valid image file to upload.";
+        $_SESSION['msg_type'] = "error";
+    }
+    
+    // PRG Pattern to prevent duplicate form submissions
+    header("Location: home.php");
+    exit();
+}
+
+// ---------------------------------------------------------------------
 // 1. PWA MANIFEST GENERATOR (Mobile App Registration)
 // ---------------------------------------------------------------------
 if (isset($_GET['manifest'])) {
@@ -593,7 +652,6 @@ foreach (array_reverse($billingHistory) as $bh) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>NOCECO</title>
     
-    <!-- PWA MANIFEST & iOS META TAGS -->
     <link rel="manifest" href="home.php?manifest=1">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -637,17 +695,14 @@ foreach (array_reverse($billingHistory) as $bh) {
 </head>
 <body class="bg-noceco-bg text-noceco-text flex h-screen overflow-hidden pb-16 md:pb-0 transition-colors duration-300 relative">
     
-    <!-- OFFLINE BANNER -->
     <div id="offline-banner" class="hidden bg-red-500 text-white text-center text-xs font-bold py-1.5 z-[100] absolute top-0 w-full shadow-md">
         ⚠️ You are currently offline. Viewing cached app data.
     </div>
     
-    <!-- SYNC SUCCESS BANNER -->
     <div id="sync-banner" class="opacity-0 transition-opacity duration-1000 bg-green-500 text-white text-center text-xs font-bold py-1.5 z-[100] absolute top-0 w-full shadow-md pointer-events-none">
         ✅ Offline Sync Complete. App is ready for offline use.
     </div>
 
-    <!-- PWA INSTALL PROMPT FOR MOBILE -->
     <div id="install-prompt" class="hidden fixed bottom-20 left-4 right-4 bg-white/90 backdrop-blur-md border border-gray-200 p-4 rounded-2xl shadow-2xl z-[90] flex items-center justify-between">
         <div class="flex items-center gap-3">
             <img src="../images/NOCECO.png" class="w-10 h-10 rounded-xl shadow-sm" alt="App Icon">
@@ -771,6 +826,12 @@ foreach (array_reverse($billingHistory) as $bh) {
 
         <div id="main_content" class="px-4 md:px-10 pb-10 max-w-5xl mx-auto relative z-10">
             
+            <?php if ($message): ?>
+                <div class="mb-4 p-4 rounded-xl text-sm font-bold <?php echo $messageType === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'; ?> shadow-sm">
+                    <?php echo htmlspecialchars($message); ?>
+                </div>
+            <?php endif; ?>
+
             <?php if ($client_status === 'Disconnected'): ?>
             <div class="bg-red-600 rounded-[24px] p-6 mb-6 shadow-[0_8px_30px_rgba(220,38,38,0.3)] flex flex-col md:flex-row items-center md:items-start gap-4 text-white text-center md:text-left relative overflow-hidden animate-pulse">
                 <div class="absolute -right-4 -top-4 w-24 h-24 bg-white/20 rounded-full blur-2xl"></div>
@@ -804,12 +865,17 @@ foreach (array_reverse($billingHistory) as $bh) {
                 </div>
 
                 <?php if ($hasUnpaid): ?>
-                    <!-- YELLOW ORANGE BLUR GLASS GCASH BUTTON -->
-                    <button onclick="openGCash()" class="flex items-center justify-center w-full bg-gradient-to-r from-yellow-500/40 to-orange-500/40 backdrop-blur-lg border border-white/20 hover:from-yellow-500/60 hover:to-orange-500/60 text-white font-bold py-4 rounded-xl transition-all duration-300 shadow-[0_8px_32px_rgba(249,115,22,0.3)] hover:shadow-[0_12px_40px_rgba(249,115,22,0.5)] relative z-10 tracking-wide">
+                    <button onclick="openGCash()" class="flex items-center justify-center w-full bg-gradient-to-r from-yellow-500/40 to-orange-500/40 backdrop-blur-lg border border-white/20 hover:from-yellow-500/60 hover:to-orange-500/60 text-white font-bold py-4 rounded-xl transition-all duration-300 shadow-[0_8px_32px_rgba(249,115,22,0.3)] hover:shadow-[0_12px_40px_rgba(249,115,22,0.5)] relative z-10 tracking-wide mb-2">
                         <svg class="w-5 h-5 mr-2 drop-shadow-md" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
                         <span class="drop-shadow-md">Pay Directly via GCash</span>
                     </button>
-                    <p class="text-center text-xs text-gray-300 mt-3 relative z-10">Includes previous unpaid bills & applicable penalties.</p>
+                    
+                    <button onclick="document.getElementById('uploadModal').classList.remove('hidden');" class="flex items-center justify-center w-full bg-white/10 hover:bg-white/20 text-white font-medium py-3 rounded-xl transition-all duration-300 border border-white/20 text-sm relative z-10">
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        Upload Payment Proof
+                    </button>
+                    
+                    <p class="text-center text-xs text-gray-300 mt-4 relative z-10">Includes previous unpaid bills & applicable penalties.</p>
                 <?php else: ?>
                     <div class="w-full bg-white/10 text-white font-medium py-4 rounded-xl text-center border border-white/20 relative z-10">
                         You have no pending bills.
@@ -847,7 +913,7 @@ foreach (array_reverse($billingHistory) as $bh) {
                     Close ✕
                 </button>
                 <button onclick="downloadHDInvoice()" id="downloadBtn" class="bg-noceco-mustard hover:bg-noceco-mustardHover text-white px-6 py-2 rounded-full font-bold shadow-lg transition-all flex items-center">
-                    <svg class="w-5 h-5 mr-2 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    <svg class="w-5 h-5 mr-2 hidden md:block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0l-4-4m4 4V4"></path></svg>
                     Download HD
                 </button>
             </div>
@@ -856,6 +922,42 @@ foreach (array_reverse($billingHistory) as $bh) {
                     <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-noceco-mustard"></div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <div id="uploadModal" class="fixed inset-0 z-[110] bg-gray-900/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-white theme-card w-full max-w-md rounded-[24px] shadow-2xl overflow-hidden transform transition-all relative">
+            <div class="p-6 border-b border-gray-100 theme-border flex justify-between items-center bg-gray-50 theme-card-inner">
+                <h3 class="font-black text-gray-900 theme-text-primary text-lg">Submit Payment Proof</h3>
+                <button type="button" onclick="document.getElementById('uploadModal').classList.add('hidden');" class="text-gray-400 hover:text-gray-900 bg-white theme-card rounded-full p-1 shadow-sm border border-gray-200 theme-border">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <form action="home.php" method="POST" enctype="multipart/form-data" class="p-6 space-y-5" onsubmit="document.getElementById('uploadBtn').disabled=true; document.getElementById('uploadBtn').innerHTML='Uploading...';">
+                <input type="hidden" name="action" value="upload_payment">
+                
+                <div class="bg-blue-50 border border-blue-100 p-4 rounded-xl text-sm text-blue-800">
+                    <p class="font-bold mb-1">Manual Verification</p>
+                    <p class="text-xs">If you paid via Over-the-Counter or a 3rd-party center, upload your receipt here so our cashiers can verify and update your balance.</p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 theme-text-secondary uppercase tracking-widest mb-2">Reference / Tracking Number</label>
+                    <input type="text" name="reference_number" required placeholder="e.g. 1002394823" class="w-full px-4 py-3 bg-gray-50 theme-input border border-gray-200 rounded-xl focus:ring-2 focus:ring-noceco-mustard outline-none transition-all text-sm font-mono font-bold text-gray-900 theme-text-primary">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 theme-text-secondary uppercase tracking-widest mb-2">Screenshot / Receipt Image</label>
+                    <input type="file" name="payment_image" accept="image/jpeg, image/png, application/pdf" required class="w-full px-4 py-3 bg-gray-50 theme-input border border-gray-200 rounded-xl focus:ring-2 focus:ring-noceco-mustard outline-none transition-all text-sm text-gray-700 theme-text-primary">
+                </div>
+
+                <div class="pt-2">
+                    <button type="submit" id="uploadBtn" class="w-full bg-noceco-mustard hover:bg-noceco-mustardHover text-white font-bold py-3.5 rounded-xl shadow-[0_4px_14px_rgba(219,161,17,0.3)] transition-all flex justify-center items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        Submit for Verification
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 

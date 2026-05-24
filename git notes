@@ -1,0 +1,10 @@
+git status
+
+git remote set-url origin git@github.com:hattori-13/NOCECO.git
+
+git add .
+
+git commit -m "barcode receipt"
+
+git push origin main
+

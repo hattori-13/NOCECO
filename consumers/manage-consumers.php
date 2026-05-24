@@ -92,7 +92,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         UPDATE clients 
                         SET contact_number = ?, 
                             consumer_type = ?, 
-                            password = ?
+                            password_hash = ?
                         WHERE account_no = ?
                     ");
 

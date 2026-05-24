@@ -36,7 +36,6 @@ if (isset($_GET['search_account']) && !empty(trim($_GET['search_account']))) {
     $current_billing_month = date('F Y'); 
     
     try {
-        // UPDATED: Now allows both Connected and Disconnected accounts
         $stmt = $pdo->prepare("SELECT account_no, first_name, last_name, meter_no, contact_number, address, consumer_type, status 
                                FROM clients 
                                WHERE (account_no = ? OR REPLACE(account_no, '-', '') = ? OR meter_no = ?) 
@@ -220,7 +219,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             }
 
             $smsMessage = "NOCECO Alert: Your bill for $billing_month is Php " . number_format($grand_total, 2) . ". Due date is $due_date. KWH Used: $kwh_used.";
-            $stmtSMS = $pdo->prepare("INSERT INTO sms_logs (account_no, contact_number, message_type, message_content) VALUES (?, ?, 'New Bill', ?)");
+            $stmtSMS = $pdo->prepare("INSERT INTO sms_logs (account_no, contact_number, message_type, message_content) VALUES (?, ?, ?, ?)");
             $stmtSMS->execute([$account_no, $contact_number, 'New Bill', $smsMessage]);
 
             $pdo->commit();
@@ -278,7 +277,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
         
-        /* OVERRIDE INJECTED HTML5 QR VIDEO STYLES FOR FULL SCREEN */
         #reader video {
             object-fit: cover !important;
             width: 100% !important;
@@ -295,7 +293,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                 position: absolute;
                 left: 0;
                 top: 0;
-                width: 58mm; /* Xprinter 58mm Standard */
+                width: 58mm;
                 margin: 0;
                 padding: 0;
                 font-family: 'Courier New', Courier, monospace !important;
@@ -305,11 +303,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             
             @page {
                 size: 58mm auto;
-                margin: 0mm; /* Reset browser margins */
+                margin: 0mm;
             }
             
-            /* Remove tailwind styling that interferes with pure thermal print */
-            .thermal-text { font-size: 11px; line-height: 1.2; }
+            .thermal-text { font-size: 10px; line-height: 1.2; }
             .thermal-title { font-size: 14px; font-weight: bold; text-align: center; }
             .thermal-divider { border-bottom: 1px dashed black; margin: 4px 0; }
         }
@@ -317,36 +314,24 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
 </head>
 <body class="bg-noceco-bg text-noceco-text min-h-screen pb-20">
 
-    <!-- FULL SCREEN GCASH STYLE QR SCANNER MODAL -->
+    <!-- QR SCANNER MODAL -->
     <div id="scanner-modal" class="fixed inset-0 z-50 bg-black hidden flex-col">
-        <!-- Header -->
         <div class="flex justify-between items-center p-4 bg-black/90 text-white relative z-20 shadow-lg">
             <span class="font-bold tracking-widest uppercase text-sm">Scan QR Code</span>
             <button onclick="stopScanner()" class="text-white hover:text-red-400 font-bold px-3 py-1 rounded bg-white/10 transition-colors">Close</button>
         </div>
-
-        <!-- Camera Container -->
         <div class="flex-1 relative overflow-hidden bg-black flex justify-center items-center">
-            <!-- This is where the camera video gets injected -->
             <div id="reader" class="absolute inset-0 w-full h-full"></div>
-            
-            <!-- Target Overlay (The dark background with clear square) -->
             <div class="absolute inset-0 pointer-events-none z-10 flex justify-center items-center">
-                <!-- Box shadow creates the dark dim effect outside the square -->
                 <div class="w-64 h-64 border-2 border-white/50 rounded-2xl relative shadow-[0_0_0_4000px_rgba(0,0,0,0.65)] box-border">
-                    <!-- Corner Reticles (GCash style yellow corners) -->
                     <div class="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-noceco-mustard rounded-tl-xl"></div>
                     <div class="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-noceco-mustard rounded-tr-xl"></div>
                     <div class="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-noceco-mustard rounded-bl-xl"></div>
                     <div class="absolute -bottom-1 -right-1 w-8 h-8 border-b-4 border-r-4 border-noceco-mustard rounded-br-xl"></div>
-                    
-                    <!-- Scanning line animation -->
                     <div class="w-full h-0.5 bg-noceco-mustard/80 absolute top-0 left-0 animate-[scan_2s_ease-in-out_infinite]"></div>
                 </div>
             </div>
         </div>
-
-        <!-- Footer -->
         <div class="p-6 bg-black/90 text-center text-gray-300 text-sm relative z-20 pb-10">
             <p>Align the QR Code within the frame to scan.</p>
         </div>
@@ -376,6 +361,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         }
         $absolute_grand_total = $generatedInvoice['grand_total'] + $previous_unpaid + $previous_penalty;
     ?>
+    <!-- THERMAL RECEIPT VIEW -->
     <div id="thermal-receipt" class="hidden print:block p-1">
         <div class="thermal-title">NOCECO</div>
         <div style="font-size: 9px; text-align: center;">Negros Occidental Electric Coop.</div>
@@ -394,17 +380,30 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             CURR READ: <?php echo $generatedInvoice['current_reading']; ?><br>
             KWH USED: <?php echo $generatedInvoice['kwh_used']; ?>
         </div>
+        
         <div class="thermal-divider"></div>
-        <div class="thermal-text" style="text-align:center;">--- CHARGES ---</div>
-        <table style="width:100%; font-size:9px; border-collapse: collapse;">
-            <?php foreach ($generatedInvoice['line_items'] as $item): ?>
+        <div class="thermal-text" style="text-align:center;">--- BILLING RATES ---</div>
+        
+        <!-- ENHANCED TABLE: Shows Description, Rate, and Amount. Skips $0.00 entries -->
+        <table style="width:100%; font-size:9px; border-collapse: collapse; margin-top: 3px;">
             <tr>
-                <td style="width:70%; text-align:left;"><?php echo substr($item['desc'], 0, 15); ?></td>
+                <th style="text-align:left; border-bottom:1px solid #000; padding-bottom: 2px;">DESC</th>
+                <th style="text-align:right; border-bottom:1px solid #000; padding-bottom: 2px;">RATE</th>
+                <th style="text-align:right; border-bottom:1px solid #000; padding-bottom: 2px;">AMT</th>
+            </tr>
+            <?php foreach ($generatedInvoice['line_items'] as $item): 
+                // Skip rendering rows where amount is 0 to save thermal paper
+                if ($item['amt'] == 0) continue;
+            ?>
+            <tr>
+                <td style="width:45%; text-align:left;"><?php echo substr($item['desc'], 0, 11); ?></td>
+                <td style="width:25%; text-align:right;"><?php echo $item['type'] == 'Per_KWH' ? number_format($item['rate'], 4) : 'FIX'; ?></td>
                 <td style="width:30%; text-align:right;"><?php echo number_format($item['amt'], 2); ?></td>
             </tr>
             <?php endforeach; ?>
         </table>
-        <div class="thermal-divider"></div>
+
+        <div class="thermal-divider" style="margin-top: 8px;"></div>
         <div class="thermal-text" style="text-align: right; font-weight: bold; font-size: 13px;">
             DUE: Php <?php echo number_format($absolute_grand_total, 2); ?>
         </div>
@@ -421,7 +420,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             Late penalty 5% after due date.<br>
             Reader: <?php echo strtoupper($_SESSION['full_name']); ?>
         </div>
-        <div style="margin-bottom: 5mm;">.</div> </div>
+        <div style="margin-bottom: 5mm;">.</div> 
+    </div>
     <?php endif; ?>
 
     <header class="bg-white px-6 py-4 border-b border-gray-200 sticky top-0 z-10 shadow-sm flex justify-between items-center print-hide">
@@ -443,6 +443,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         <?php endif; ?>
 
         <?php if ($generatedInvoice): ?>
+            <!-- DIGITAL RECEIPT VIEW -->
             <div class="bg-white rounded-[20px] shadow-apple border border-gray-200 overflow-hidden mb-6 font-mono text-sm relative">
                 <div class="absolute top-0 left-0 right-0 h-2 bg-[url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMCIgaGVpZ2h0PSIxMCI+PHBvbHlnb24gcG9pbnRzPSIwLDEwIDUsMCAxMCwxMCIgZmlsbD0iI2QxZDVkYiIvPjwvc3ZnPg==')] opacity-30"></div>
                 
@@ -463,7 +464,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                         </div>
                     </div>
 
-                    <div class="text-[11px] space-y-1 mb-4 text-gray-700 pb-3 border-b border-dashed border-gray-300">
+                    <div class="text-[11px] space-y-1 mb-4 text-gray-700">
                         <div class="flex justify-between"><span>Billing Month:</span> <span class="font-bold text-gray-900"><?php echo htmlspecialchars($generatedInvoice['billing_month']); ?></span></div>
                         <div class="flex justify-between"><span>Meter No:</span> <span><?php echo htmlspecialchars($generatedInvoice['meter_no']); ?></span></div>
                         <div class="flex justify-between pt-2">
@@ -476,15 +477,34 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                         </div>
                     </div>
 
-                    <div class="flex flex-col items-center justify-center my-4 border-b border-dashed border-gray-300 pb-4">
-                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?php echo urlencode($generatedInvoice['account_no']); ?>" alt="QR Code" class="w-32 h-32 shadow-sm mb-3 object-contain bg-white p-2">
-                        <button onclick="window.print()" class="bg-noceco-mustard text-white px-6 py-2 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-yellow-600 transition-colors shadow-sm">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
+                    <!-- ENHANCED DIGITAL BREAKDOWN: Displays active rates cleanly -->
+                    <div class="mt-4 pt-4 border-t border-dashed border-gray-300">
+                        <div class="text-[10px] font-bold text-gray-500 mb-2 uppercase tracking-wider">Charges Breakdown & Rates</div>
+                        <div class="space-y-1.5">
+                            <?php foreach ($generatedInvoice['line_items'] as $item): 
+                                // Hide zero items from UI to keep it clean
+                                if ($item['amt'] == 0) continue; 
+                            ?>
+                            <div class="flex justify-between text-[11px] text-gray-700 items-center">
+                                <span class="truncate w-1/2 pr-2 font-medium"><?php echo htmlspecialchars($item['desc']); ?></span>
+                                <span class="w-1/4 text-right text-gray-400 text-[10px]">
+                                    <?php echo $item['type'] === 'Per_KWH' ? '@' . number_format($item['rate'], 4) : 'Fixed'; ?>
+                                </span>
+                                <span class="w-1/4 text-right text-gray-900"><?php echo number_format($item['amt'], 2); ?></span>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-col items-center justify-center my-6 border-b border-t border-dashed border-gray-300 py-6">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?php echo urlencode($generatedInvoice['account_no']); ?>" alt="QR Code" class="w-32 h-32 shadow-sm mb-4 object-contain bg-white p-2">
+                        <button onclick="window.print()" class="bg-noceco-mustard text-white px-6 py-3 rounded-full font-bold text-sm flex items-center gap-2 hover:bg-yellow-600 transition-colors shadow-sm w-full justify-center">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
                             Print Receipt (Thermal)
                         </button>
                     </div>
 
-                    <div class="flex justify-between font-bold text-lg pt-2 border-t border-gray-800 text-gray-900">
+                    <div class="flex justify-between font-bold text-xl pt-2 text-gray-900">
                         <span>TOTAL DUE</span>
                         <span>Php <?php echo number_format($absolute_grand_total ?? $generatedInvoice['grand_total'], 2); ?></span>
                     </div>
@@ -532,7 +552,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                 <div class="flex justify-between items-start mb-1">
                     <h3 class="text-lg font-bold text-gray-900 flex items-center flex-wrap gap-2">
                         <?php echo htmlspecialchars($clientData['last_name'] . ', ' . $clientData['first_name']); ?>
-                        <!-- Disconnected Badge Display -->
                         <?php if (isset($clientData['status']) && $clientData['status'] === 'Disconnected'): ?>
                             <span class="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-600 rounded uppercase tracking-wider">Disconnected</span>
                         <?php endif; ?>
@@ -579,7 +598,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     </main>
 
     <script>
-        // UX Loaders
         function showLoading() {
             document.getElementById('btnText').textContent = 'Searching...';
             document.getElementById('btnSpinner').classList.remove('hidden');
@@ -591,41 +609,26 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             document.getElementById('generateBtn').classList.add('opacity-80', 'cursor-not-allowed');
         }
 
-        // ==========================================
-        // RAW HTML5-QRCODE API (GCash Style Overlay)
-        // ==========================================
         let html5QrCode;
 
         function startScanner() {
-            // Show modal immediately
             const modal = document.getElementById('scanner-modal');
             modal.classList.remove('hidden');
             modal.classList.add('flex');
             
-            // Initialize underlying class
             html5QrCode = new Html5Qrcode("reader");
-            
-            // Force back camera (environment)
-            const config = { 
-                fps: 10, 
-                qrbox: { width: 250, height: 250 },
-                aspectRatio: 1.0 
-            };
+            const config = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
 
             html5QrCode.start(
                 { facingMode: "environment" }, 
                 config,
                 (decodedText, decodedResult) => {
-                    // Success callback
                     stopScanner();
                     document.getElementById('search_account').value = decodedText;
                     document.getElementById('searchForm').submit();
                 },
-                (errorMessage) => {
-                    // Scanning failures constantly happen frame-by-frame, safely ignore.
-                }
+                (errorMessage) => { }
             ).catch((err) => {
-                // Fatal error (Permission denied, no camera, or HTTP instead of HTTPS)
                 alert("Cannot access the camera. Please ensure permissions are granted and you are loading this page over HTTPS. Error: " + err);
                 stopScanner();
             });
@@ -637,11 +640,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
             modal.classList.remove('flex');
             
             if(html5QrCode) {
-                html5QrCode.stop().then(() => {
-                    html5QrCode.clear();
-                }).catch(err => {
-                    console.log("Error stopping scanner", err);
-                });
+                html5QrCode.stop().then(() => { html5QrCode.clear(); }).catch(err => { console.log(err); });
             }
         }
     </script>

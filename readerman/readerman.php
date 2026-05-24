@@ -277,6 +277,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 4px; }
         
+        /* OVERRIDE INJECTED HTML5 QR VIDEO STYLES FOR FULL SCREEN */
+        #reader video {
+            object-fit: cover !important;
+            width: 100% !important;
+            height: 100% !important;
+        }
+
         /* THERMAL PRINTER SPECIFIC CSS (57x40mm) */
         @media print {
             body * { visibility: hidden; }
@@ -308,6 +315,50 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
     </style>
 </head>
 <body class="bg-noceco-bg text-noceco-text min-h-screen pb-20">
+
+    <!-- FULL SCREEN GCASH STYLE QR SCANNER MODAL -->
+    <div id="scanner-modal" class="fixed inset-0 z-50 bg-black hidden flex-col">
+        <!-- Header -->
+        <div class="flex justify-between items-center p-4 bg-black/90 text-white relative z-20 shadow-lg">
+            <span class="font-bold tracking-widest uppercase text-sm">Scan QR Code</span>
+            <button onclick="stopScanner()" class="text-white hover:text-red-400 font-bold px-3 py-1 rounded bg-white/10 transition-colors">Close</button>
+        </div>
+
+        <!-- Camera Container -->
+        <div class="flex-1 relative overflow-hidden bg-black flex justify-center items-center">
+            <!-- This is where the camera video gets injected -->
+            <div id="reader" class="absolute inset-0 w-full h-full"></div>
+            
+            <!-- Target Overlay (The dark background with clear square) -->
+            <div class="absolute inset-0 pointer-events-none z-10 flex justify-center items-center">
+                <!-- Box shadow creates the dark dim effect outside the square -->
+                <div class="w-64 h-64 border-2 border-white/50 rounded-2xl relative shadow-[0_0_0_4000px_rgba(0,0,0,0.65)] box-border">
+                    <!-- Corner Reticles (GCash style yellow corners) -->
+                    <div class="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-noceco-mustard rounded-tl-xl"></div>
+                    <div class="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-noceco-mustard rounded-tr-xl"></div>
+                    <div class="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-noceco-mustard rounded-bl-xl"></div>
+                    <div class="absolute -bottom-1 -right-1 w-8 h-8 border-b-4 border-r-4 border-noceco-mustard rounded-br-xl"></div>
+                    
+                    <!-- Scanning line animation -->
+                    <div class="w-full h-0.5 bg-noceco-mustard/80 absolute top-0 left-0 animate-[scan_2s_ease-in-out_infinite]"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="p-6 bg-black/90 text-center text-gray-300 text-sm relative z-20 pb-10">
+            <p>Align the QR Code within the frame to scan.</p>
+        </div>
+    </div>
+    
+    <style>
+        @keyframes scan {
+            0% { top: 0%; opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { top: 100%; opacity: 0; }
+        }
+    </style>
 
     <?php if ($generatedInvoice): 
         $previous_unpaid = 0;
@@ -362,7 +413,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         <div class="thermal-divider"></div>
         
         <div style="display:flex; justify-content:center; margin-top:5px;">
-            <img src="https://barcode.tec-it.com/barcode.ashx?data=<?php echo urlencode($generatedInvoice['account_no']); ?>&code=Code128" alt="Barcode" style="width: 100%; max-width: 180px; height: 40px; object-fit: contain;">
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=<?php echo urlencode($generatedInvoice['account_no']); ?>" alt="QR Code" style="width: 100px; height: 100px; object-fit: contain;">
         </div>
         
         <div style="font-size: 8px; text-align: center; margin-top: 5px;">
@@ -425,7 +476,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                     </div>
 
                     <div class="flex flex-col items-center justify-center my-4 border-b border-dashed border-gray-300 pb-4">
-                        <img src="https://barcode.tec-it.com/barcode.ashx?data=<?php echo urlencode($generatedInvoice['account_no']); ?>&code=Code128" alt="Barcode" class="w-48 h-16 shadow-sm mb-3 object-contain bg-white p-1">
+                        <img src="https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=<?php echo urlencode($generatedInvoice['account_no']); ?>" alt="QR Code" class="w-32 h-32 shadow-sm mb-3 object-contain bg-white p-2">
                         <button onclick="window.print()" class="bg-noceco-mustard text-white px-6 py-2 rounded-full font-bold text-xs flex items-center gap-2 hover:bg-yellow-600 transition-colors shadow-sm">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path></svg>
                             Print Receipt (Thermal)
@@ -445,22 +496,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
 
         <?php elseif (!$clientData): ?>
             
-            <div id="scanner-container" class="hidden mb-6 bg-gray-900 rounded-2xl overflow-hidden shadow-2xl relative">
-                <div class="p-3 bg-black flex justify-between items-center text-white">
-                    <span class="text-xs font-bold uppercase tracking-widest">Barcode Scanner</span>
-                    <button type="button" onclick="stopScanner()" class="text-red-500 font-bold text-sm">Close</button>
-                </div>
-                <div id="reader" width="100%"></div>
-            </div>
-
             <div class="bg-white rounded-[24px] p-6 md:p-8 shadow-apple border border-gray-100 mt-2">
                 <div class="flex justify-between items-center mb-6">
                     <div>
                         <h2 class="text-xl font-bold text-gray-900">Find Record</h2>
-                        <p class="text-sm text-gray-500">Enter Account or Meter No.</p>
+                        <p class="text-sm text-gray-500">Scan QR or enter Account No.</p>
                     </div>
-                    <button type="button" onclick="startScanner()" class="w-12 h-12 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-full flex items-center justify-center transition-colors">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <button type="button" onclick="startScanner()" class="w-14 h-14 bg-noceco-mustard hover:bg-noceco-mustardHover text-white rounded-2xl shadow-md flex items-center justify-center transition-all transform hover:scale-105">
+                        <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
                     </button>
                 </div>
                 
@@ -470,7 +513,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                             class="w-full text-2xl font-bold px-5 py-4 rounded-xl bg-gray-50 border border-gray-200 focus:outline-none focus:ring-2 focus:ring-noceco-mustard transition-all tracking-wide text-gray-900 placeholder-gray-300"
                             placeholder="e.g., 26-328-66378" autofocus>
                         
-                        <button type="submit" id="searchBtn" class="w-full bg-noceco-mustard hover:bg-noceco-mustardHover text-white py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center shadow-md">
+                        <button type="submit" id="searchBtn" class="w-full bg-gray-900 hover:bg-black text-white py-4 rounded-xl font-bold text-lg transition-all flex items-center justify-center shadow-md">
                             <span id="btnText">Search Record</span>
                             <svg id="btnSpinner" class="animate-spin h-5 w-5 hidden ml-2 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                         </button>
@@ -518,9 +561,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                     </div>
 
                     <button type="submit" id="generateBtn" onclick="return confirm('Finalize reading and generate the official bill?');"
-                        class="w-full bg-gray-900 hover:bg-black text-white font-bold text-lg py-5 rounded-2xl shadow-apple transition-all flex justify-center items-center gap-2">
+                        class="w-full bg-noceco-mustard hover:bg-noceco-mustardHover text-white font-bold text-lg py-5 rounded-2xl shadow-apple transition-all flex justify-center items-center gap-2">
                         <span id="generateText">Generate Official Bill</span>
-                        <svg id="generateSpinner" class="animate-spin h-5 w-5 hidden ml-2 text-noceco-mustard" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                        <svg id="generateSpinner" class="animate-spin h-5 w-5 hidden ml-2 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     </button>
                 </form>
             </div>
@@ -541,44 +584,57 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         }
 
         // ==========================================
-        // HTML5 BARCODE/QR SCANNER LOGIC
+        // RAW HTML5-QRCODE API (GCash Style Overlay)
         // ==========================================
-        let html5QrcodeScanner = null;
+        let html5QrCode;
 
         function startScanner() {
-            document.getElementById('scanner-container').classList.remove('hidden');
+            // Show modal immediately
+            const modal = document.getElementById('scanner-modal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
             
-            // Initialize the scanner targeting the 'reader' div
-            // Changed the box shape to be a rectangle to better fit 1D Barcodes
-            html5QrcodeScanner = new Html5QrcodeScanner(
-                "reader", 
-                { fps: 10, qrbox: {width: 300, height: 150}, aspectRatio: 2.0 }, 
-                /* verbose= */ false
-            );
+            // Initialize underlying class
+            html5QrCode = new Html5Qrcode("reader");
             
-            html5QrcodeScanner.render(onScanSuccess, onScanFailure);
+            // Force back camera (environment)
+            const config = { 
+                fps: 10, 
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: 1.0 
+            };
+
+            html5QrCode.start(
+                { facingMode: "environment" }, 
+                config,
+                (decodedText, decodedResult) => {
+                    // Success callback
+                    stopScanner();
+                    document.getElementById('search_account').value = decodedText;
+                    document.getElementById('searchForm').submit();
+                },
+                (errorMessage) => {
+                    // Scanning failures constantly happen frame-by-frame, safely ignore.
+                }
+            ).catch((err) => {
+                // Fatal error (Permission denied, no camera, or HTTP instead of HTTPS)
+                alert("Cannot access the camera. Please ensure permissions are granted and you are loading this page over HTTPS. Error: " + err);
+                stopScanner();
+            });
         }
 
         function stopScanner() {
-            if(html5QrcodeScanner) {
-                html5QrcodeScanner.clear();
+            const modal = document.getElementById('scanner-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            
+            if(html5QrCode) {
+                html5QrCode.stop().then(() => {
+                    html5QrCode.clear();
+                }).catch(err => {
+                    console.log("Error stopping scanner", err);
+                });
             }
-            document.getElementById('scanner-container').classList.add('hidden');
-        }
-
-        function onScanSuccess(decodedText, decodedResult) {
-            // Stop scanning to prevent multiple hits
-            stopScanner();
-            
-            // Fill the search input with the Barcode text (Account No)
-            document.getElementById('search_account').value = decodedText;
-            
-            // Auto-submit the form
-            document.getElementById('searchForm').submit();
-        }
-
-        function onScanFailure(error) {
-            // Silently handle scan failures (happens every frame until Barcode is detected)
         }
     </script>
 </body>

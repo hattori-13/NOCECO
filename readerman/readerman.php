@@ -36,10 +36,11 @@ if (isset($_GET['search_account']) && !empty(trim($_GET['search_account']))) {
     $current_billing_month = date('F Y'); 
     
     try {
-        $stmt = $pdo->prepare("SELECT account_no, first_name, last_name, meter_no, contact_number, address, consumer_type 
+        // UPDATED: Now allows both Connected and Disconnected accounts
+        $stmt = $pdo->prepare("SELECT account_no, first_name, last_name, meter_no, contact_number, address, consumer_type, status 
                                FROM clients 
                                WHERE (account_no = ? OR REPLACE(account_no, '-', '') = ? OR meter_no = ?) 
-                               AND status = 'Connected'");
+                               AND status IN ('Connected', 'Disconnected')");
         $stmt->execute([$search_term, $clean_term, $search_term]);
         $clientData = $stmt->fetch();
 
@@ -151,7 +152,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         $clientData = [
             'account_no' => $account_no, 'contact_number' => $contact_number, 
             'first_name' => $_POST['fname'], 'last_name' => $_POST['lname'], 
-            'meter_no' => $_POST['meter_no'], 'address' => $_POST['address'], 'consumer_type' => $_POST['consumer_type']
+            'meter_no' => $_POST['meter_no'], 'address' => $_POST['address'], 'consumer_type' => $_POST['consumer_type'], 'status' => $_POST['status']
         ];
     } elseif ($current_reading < $previous_reading) {
         $message = "Error: Current reading cannot be lower than previous reading ($previous_reading).";
@@ -159,7 +160,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         $clientData = [
             'account_no' => $account_no, 'contact_number' => $contact_number, 
             'first_name' => $_POST['fname'], 'last_name' => $_POST['lname'], 
-            'meter_no' => $_POST['meter_no'], 'address' => $_POST['address'], 'consumer_type' => $_POST['consumer_type']
+            'meter_no' => $_POST['meter_no'], 'address' => $_POST['address'], 'consumer_type' => $_POST['consumer_type'], 'status' => $_POST['status']
         ];
     } else {
         $kwh_used = $current_reading - $previous_reading;
@@ -529,7 +530,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
         <?php else: ?>
             <div class="bg-white rounded-t-[20px] p-5 border-b border-gray-100 shadow-apple mt-2">
                 <div class="flex justify-between items-start mb-1">
-                    <h3 class="text-lg font-bold text-gray-900"><?php echo htmlspecialchars($clientData['last_name'] . ', ' . $clientData['first_name']); ?></h3>
+                    <h3 class="text-lg font-bold text-gray-900 flex items-center flex-wrap gap-2">
+                        <?php echo htmlspecialchars($clientData['last_name'] . ', ' . $clientData['first_name']); ?>
+                        <!-- Disconnected Badge Display -->
+                        <?php if (isset($clientData['status']) && $clientData['status'] === 'Disconnected'): ?>
+                            <span class="px-2 py-0.5 text-[10px] font-bold bg-red-100 text-red-600 rounded uppercase tracking-wider">Disconnected</span>
+                        <?php endif; ?>
+                    </h3>
                     <a href="readerman.php" class="text-xs text-gray-400 hover:text-red-500 font-medium bg-gray-50 px-2 py-1 rounded">Cancel</a>
                 </div>
                 <p class="text-sm text-gray-500">Acc: <span class="font-semibold text-gray-900"><?php echo htmlspecialchars($clientData['account_no']); ?></span></p>
@@ -547,6 +554,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST" && isset($_POST['action']) && $_POST['a
                     <input type="hidden" name="address" value="<?php echo htmlspecialchars($clientData['address']); ?>">
                     <input type="hidden" name="consumer_type" value="<?php echo htmlspecialchars($clientData['consumer_type']); ?>">
                     <input type="hidden" name="meter_no" value="<?php echo htmlspecialchars($clientData['meter_no']); ?>">
+                    <input type="hidden" name="status" value="<?php echo htmlspecialchars($clientData['status']); ?>">
 
                     <div class="mb-5 p-4 bg-gray-50 rounded-xl border border-gray-100 flex justify-between items-center">
                         <p class="text-sm font-medium text-gray-500">Previous Reading</p>
